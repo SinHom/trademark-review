@@ -5,6 +5,21 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.3.5] - 2026-11-11
+
+### 修复
+
+- **Word 报告在英文 Windows + Python 3.9 下生成失败**：`strftime('%Y年%m月%d日')`
+  的格式串会被系统 locale 编码，en-US（cp1252）编不出「年」，
+  抛 `UnicodeEncodeError: 'locale' codec can't encode character '年'`。
+  改为手工拼接日期，与 locale 无关。
+  该问题只在 CI 的 windows-latest + Python 3.9 组合暴露，本地中文 Windows 无法复现。
+
+### 工程
+
+- `verify.sh` 回归失败时直接打印失败用例名与异常行（此前被 `tail` 截断，
+  只能看到"1 个测试失败"却不知道是哪个）。
+
 ## [1.3.4] - 2026-11-11
 
 ### 修复

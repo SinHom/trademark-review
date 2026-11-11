@@ -43,7 +43,11 @@ def generate_docx_report(results: List[Dict], output_path: str):
     title.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
     law = results[0].get("law", {})
-    _add_lines(doc, f"生成日期：{datetime.now().strftime('%Y年%m月%d日')}")
+    # 不能用 strftime('%Y年%m月%d日')：Python 3.9 在 Windows 上会用系统 locale
+    # 编码格式串，英文系统（cp1252）编不出"年"而抛 UnicodeEncodeError。
+    # 手工拼接日期，与 locale 无关。
+    _today = datetime.now()
+    _add_lines(doc, f"生成日期：{_today.year}年{_today.month:02d}月{_today.day:02d}日")
     _add_lines(doc, f"审查商标数量：{len(results)}")
     _add_lines(doc, f"审查依据：{law.get('label','')}（{law.get('effective_from','')} 施行，现行有效）")
     _add_lines(
