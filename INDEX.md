@@ -9,7 +9,7 @@
 | [references/article_map.json](references/article_map.json) | 2019↔2026 条号映射（唯一事实来源） |
 | [test-prompts.json](test-prompts.json) | 触发与输出契约测试 |
 
-测试：`python tests/test_review.py`（15 项）
+验证：`bash scripts/verify.sh l0|l1|l2`（l2 含 15 项回归 + 5 个门禁）
 
 历史上的开发过程文档已删除，其结论（含"88分/A-级"等未做原文对账的自评）不再保留，避免误导。
 需要追溯请看 `git log` 与 `CHANGELOG.md`。

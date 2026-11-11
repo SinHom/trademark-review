@@ -5,6 +5,21 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.3.1] - 2026-11-11
+
+### 工程与文档
+
+- ✨ 新增 `scripts/verify.sh`：三层验证（l0 静态 / l1 回归 / l2 门禁+一致性+密钥扫描）
+- ✨ 新增 `scripts/fetch_geodata.sh`：行政区划数据可复现重建
+- 🧹 `config.yaml` 只保留代码真正读取的配置项，删除未实现的选项（report/output/law_update_check/cache 等）
+- 🧹 移除空的 `templates/` 目录
+- 🔧 `SKILL.md` 中"23 个类别"更正为 1-45 类
+- 🔧 `test-prompts.json` 版本号与 SKILL.md 对齐
+
+### 发布纪律
+
+- live 副本 `~/.claude/skills/trademark-review` 已同步到仓库最新版本（此前停留在 v1.0.1）
+
 ## [1.3.0] - 2026-11-11
 
 ### 新增

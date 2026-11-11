@@ -2,7 +2,7 @@
 name: trademark-review
 description: 中国商标注册前合规审查。输入商标名称与类别，逐条比对现行《商标法》及其实施条例、审查审理指南，给出"不得注册/条件性风险/风险分级"结论、法条原文依据、以及必须人工确认的清单。不绑定商标数据源，可接入任意查询接口。适用于品牌命名预筛、批量候选评估、申请前风险自查。
 origin: Custom
-version: 1.3.0
+version: 1.3.1
 ---
 
 # 商标合规审查
@@ -58,7 +58,7 @@ python scripts/review.py "云图智能" --class 9 --law-version 2026
    依据：article_map → national_name / misleading / geographic_name
 
 2. 显著特征审查
-   - 按类别的通用名称（23 个类别内置）
+   - 按类别的通用名称（尼斯分类 1-45 类内置）
    - 描述性词汇
    - 整体由通用/描述词构成 → 高风险（缺乏显著特征）
    依据：article_map → distinctiveness_generic / _descriptive / _lack
@@ -142,6 +142,7 @@ references/laws/             法规原文
   collective_certification_2024.md 集体/证明商标规定
   examination_guideline_2021.md 审查审理指南（43 章结构化全文）
 tests/test_review.py         15 个回归测试
+scripts/verify.sh            三层验证（l0/l1/l2）
 ```
 
 ## 能力边界（必须向用户如实说明）

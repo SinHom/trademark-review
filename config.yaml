@@ -1,60 +1,34 @@
-# 商标审查配置文件
+# 商标审查配置
+# 原则：只保留代码真正读取的配置项；未实现的选项不放进来，避免"配置骗人"。
 trademark_review:
-  # 风险阈值
-  risk_threshold:
-    high: 0.7      # 高风险阈值（≥0.7为高风险）
-    medium: 0.4    # 中风险阈值（0.4-0.7为中风险，<0.4为低风险）
+  # 审查依据版本：2019（现行有效）| 2026（2027-01-01 起施行）
+  law:
+    version: "2019"
 
-  # 默认商标类别（如未指定）
+  # 未指定类别时的默认值
   default_classes: [9, 35, 42]
 
-  # 报告配置
-  report:
-    language: zh-CN
-    include_legal_text: true      # 是否在报告中包含完整法条
-    include_case_references: false # 是否包含案例参考
-    logo_path: null                # 企业logo路径（可选）
-    watermark: null                # 水印文字（可选）
-
-  # API配置
-  api:
-    adapter_class: null  # 自定义适配器类路径，如 "mypackage.MyAdapter"
-    timeout: 30          # 接口超时时间（秒）
-    retry: 3             # 重试次数
-    cache_enabled: true  # 是否启用查询缓存
-    cache_ttl: 3600      # 缓存有效期（秒）
-
-  # 审查依据版本
-  law:
-    version: "2019"   # 2019（现行有效）| 2026（2027-01-01 起施行）
+  # 风险阈值
+  risk_threshold:
+    high: 0.7      # ≥0.7 判高风险
+    medium: 0.4    # 0.4–0.7 判中风险
 
   # 审查选项
   review:
-    skip_similarity_check: false  # 是否跳过近似性检索
-    enable_ai_analysis: false     # 是否启用AI辅助分析（需额外配置）
-    strict_mode: false            # 严格模式（更保守的评估）
+    skip_similarity_check: false   # true = 跳过在先商标检索（结论会标注"未检索"）
 
-  # AI辅助分析配置
+  # 商标数据源适配器；null = 不检索，绝不返回虚构数据
+  api:
+    adapter_class: null            # 例："my_package.MyAdapter"
+
+  # AI 辅助分析（默认关闭）
   ai_analysis:
-    enabled: false                # 是否启用AI分析
-    provider: "anthropic"         # anthropic / openai
-    model: "claude-3-5-sonnet-20241022"  # 使用的模型
-    api_key: null                 # API密钥（优先使用环境变量）
+    enabled: false
+    provider: "anthropic"          # anthropic | openai
+    model: "claude-3-5-sonnet-20241022"
+    api_key: null                  # 建议用环境变量 ANTHROPIC_API_KEY / OPENAI_API_KEY
     features:
-      geographic_analysis: true   # 地名多义性分析
-      distinctiveness_deep: true  # 显著性深度分析
-      semantic_similarity: true   # 语义相似度分析
+      geographic_analysis: true    # 地名多义性判断
+      distinctiveness_deep: true   # 显著性深度分析
+      semantic_similarity: false   # 接口已备，尚未接入主流程
       alternative_generation: true # 生成修改建议
-
-  # 法规更新检查
-  law_update_check:
-    enabled: true
-    check_interval: 86400  # 检查间隔（秒），默认每天
-    check_url: "https://flk.npc.gov.cn/"
-    last_check: null
-
-  # 输出配置
-  output:
-    default_format: docx  # docx 或 pdf
-    include_metadata: true
-    compress_pdf: false

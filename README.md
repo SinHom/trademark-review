@@ -102,6 +102,9 @@ references/laws/
   collective_certification_2024.md 集体商标、证明商标规定
   examination_guideline_2021.md   商标审查审理指南（43 章结构化全文，22.5 万字）
 tests/test_review.py              15 个回归测试
+scripts/verify.sh                 三层验证（l0/l1/l2）
+scripts/fetch_guideline.sh        指南全文重建
+scripts/fetch_geodata.sh          行政区划库重建
 ```
 
 ## 验证与测试
