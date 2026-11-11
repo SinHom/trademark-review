@@ -1,282 +1,217 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
 商标审查报告生成器
 
-生成Word或PDF格式的专业商标审查报告
+报告中的法条引用全部来自审查结果中的 article 字段（其源头是
+references/article_map.json），本文件不硬编码任何条号。
 """
 
-from pathlib import Path
-from typing import List, Dict
 from datetime import datetime
+from typing import List, Dict
 
 
 def generate_report(results: List[Dict], output_path: str, format: str = "docx"):
-    """
-    生成审查报告
-
-    Args:
-        results: 审查结果列表
-        output_path: 输出文件路径
-        format: 报告格式 docx/pdf/html
-    """
     if format == "docx":
         generate_docx_report(results, output_path)
     elif format == "pdf":
         generate_pdf_report(results, output_path)
     elif format == "json":
-        generate_json_report(results, output_path)
+        import json
+        with open(output_path, 'w', encoding='utf-8') as f:
+            json.dump(results, f, ensure_ascii=False, indent=2)
     else:
         raise ValueError(f"不支持的格式: {format}")
 
 
+def _add_lines(doc, text: str, style=None):
+    para = doc.add_paragraph(style=style) if style else doc.add_paragraph()
+    para.add_run(text)
+    return para
+
+
 def generate_docx_report(results: List[Dict], output_path: str):
-    """生成Word格式报告"""
     try:
         from docx import Document
-        from docx.shared import Pt, RGBColor, Inches
         from docx.enum.text import WD_ALIGN_PARAGRAPH
     except ImportError:
-        print("❌ 需要安装 python-docx: pip install python-docx")
-        return
+        raise SystemExit("需要安装 python-docx：pip install python-docx")
 
     doc = Document()
 
-    # 设置标题
-    title = doc.add_heading("商标注册成功率审查报告", level=0)
+    title = doc.add_heading("商标合规审查报告", level=0)
     title.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
-    # 报告信息
-    doc.add_paragraph(f"生成日期: {datetime.now().strftime('%Y年%m月%d日')}")
-    doc.add_paragraph(f"审查商标数量: {len(results)}")
+    law = results[0].get("law", {})
+    _add_lines(doc, f"生成日期：{datetime.now().strftime('%Y年%m月%d日')}")
+    _add_lines(doc, f"审查商标数量：{len(results)}")
+    _add_lines(doc, f"审查依据：{law.get('label','')}（{law.get('effective_from','')} 施行，现行有效）")
+    _add_lines(
+        doc,
+        f"版本说明：括号内并列标注 {law.get('counterpart_label','')} 条号；"
+        f"该修订版自 {law.get('counterpart_effective_from','')} 起施行，本报告结论不以其为依据。")
     doc.add_paragraph("")
 
-    # 遍历每个商标
     for idx, result in enumerate(results, 1):
-        # 商标标题
         doc.add_heading(f"{idx}. {result['trademark_name']}", level=1)
-
-        # 执行摘要
-        doc.add_heading("执行摘要", level=2)
-
         overall = result["overall"]
-        summary_table = doc.add_table(rows=4, cols=2)
-        summary_table.style = 'Light Grid Accent 1'
 
-        summary_data = [
+        doc.add_heading("结论摘要", level=2)
+        table = doc.add_table(rows=5, cols=2)
+        table.style = 'Light Grid Accent 1'
+        rows = [
             ("商标名称", result['trademark_name']),
             ("指定类别", ", ".join(map(str, result['classes']))),
-            ("风险等级", overall['risk_level']),
-            ("预估成功率", f"{overall['success_rate']}%"),
+            ("审查结论", overall.get("verdict", overall.get("risk_level", ""))),
+            ("预估成功率", "不适用（命中禁用条款）" if overall.get("success_rate") is None
+             else f"{overall['success_rate']}%（启发式估算，非统计数据）"),
+            ("结论完整性", "完整" if overall.get("completeness") == "complete" else "不完整（在先商标未检索）"),
         ]
+        for i, (k, v) in enumerate(rows):
+            table.rows[i].cells[0].text = k
+            table.rows[i].cells[1].text = str(v)
 
-        for i, (key, value) in enumerate(summary_data):
-            summary_table.rows[i].cells[0].text = key
-            summary_table.rows[i].cells[1].text = str(value)
-
-        # 风险等级颜色标注
-        risk_para = doc.add_paragraph()
-        risk_para.add_run(f"总体评估: {overall['risk_level']} | ")
-        risk_para.add_run(f"建议: {overall['recommendation']}")
-
+        _add_lines(doc, f"建议：{overall.get('recommendation','')}")
         doc.add_paragraph("")
 
-        # 1. 禁用条款审查
-        doc.add_heading("1. 禁用条款审查（商标法第十条）", level=2)
+        # 1. 禁用标志
+        prohibited = result["prohibited_check"]
+        first_article = ""
+        if prohibited.get("violations"):
+            first_article = prohibited["violations"][0].get("article", "")
+        doc.add_heading(f"1. 禁用标志审查{'（' + first_article + '）' if first_article else ''}", level=2)
 
-        prohibited = result['prohibited_check']
-        if prohibited['passed']:
-            p = doc.add_paragraph()
-            p.add_run("✅ 通过").bold = True
-            p.add_run(" - 未发现违反禁用条款的情形")
+        if not prohibited["violations"]:
+            _add_lines(doc, "✅ 未命中禁用标志条款。")
         else:
-            p = doc.add_paragraph()
-            p.add_run(f"❌ 未通过").bold = True
-            p.add_run(f" - 发现 {len(prohibited['violations'])} 个违规项")
+            for v in prohibited["violations"]:
+                _add_lines(doc, f"• {v['description']}", style='List Bullet')
+                _add_lines(doc, f"依据：{v['article']}", style='List Bullet 2')
+                _add_lines(doc, f"法律后果：{v.get('consequence','需人工确认')}", style='List Bullet 2')
 
-            for violation in prohibited['violations']:
-                doc.add_paragraph(
-                    f"• {violation['description']}",
-                    style='List Bullet'
-                )
-                doc.add_paragraph(
-                    f"  法律依据: {violation['article']}",
-                    style='List Bullet 2'
-                )
-                if 'note' in violation:
-                    doc.add_paragraph(
-                        f"  说明: {violation['note']}",
-                        style='List Bullet 2'
-                    )
+        # 2. 显著特征
+        distinctive = result["distinctiveness_check"]
+        art = distinctive["issues"][0].get("article", "") if distinctive.get("issues") else ""
+        doc.add_heading(f"2. 显著特征审查{'（' + art + '）' if art else ''}", level=2)
 
-        # 2. 显著性审查
-        doc.add_heading("2. 显著性审查（商标法第十一条）", level=2)
-
-        distinctiveness = result['distinctiveness_check']
-        if distinctiveness['passed']:
-            p = doc.add_paragraph()
-            p.add_run("✅ 通过").bold = True
-            p.add_run(" - 具备显著特征，便于识别")
+        if not distinctive["issues"]:
+            _add_lines(doc, "✅ 规则层面未发现显著特征问题。")
         else:
-            p = doc.add_paragraph()
-            p.add_run(f"⚠️  存在问题").bold = True
-            p.add_run(f" - 发现 {len(distinctiveness['issues'])} 个显著性问题")
+            for issue in distinctive["issues"]:
+                _add_lines(doc, f"• {issue['description']}", style='List Bullet')
+                _add_lines(doc, f"依据：{issue['article']}", style='List Bullet 2')
+            if distinctive.get("note"):
+                _add_lines(doc, f"备注：{distinctive['note']}")
 
-            for issue in distinctiveness['issues']:
-                doc.add_paragraph(
-                    f"• {issue['description']}",
-                    style='List Bullet'
-                )
+        ai = distinctive.get("ai_analysis")
+        if ai:
+            _add_lines(doc, f"AI 辅助评估：{ai.get('ai_assessment','')}")
+            _add_lines(doc, f"AI 理由：{ai.get('reasoning','')}")
 
-            if 'note' in distinctiveness:
-                doc.add_paragraph(f"备注: {distinctiveness['note']}")
+        # 3. 在先商标
+        sim = result["similarity_check"]
+        doc.add_heading("3. 在先商标检索", level=2)
+        status = sim.get("status", "ok")
 
-        # 3. 近似性检索
-        doc.add_heading("3. 在先权利检索（商标法第三十条、三十一条）", level=2)
-
-        similarity = result['similarity_check']
-        similar_marks = similarity.get('similar_marks', [])
-
-        if 'error' in similarity:
-            doc.add_paragraph(f"⚠️  检索失败: {similarity['error']}")
-            doc.add_paragraph(f"说明: {similarity.get('note', '')}")
-        elif not similar_marks:
-            p = doc.add_paragraph()
-            p.add_run("✅ 通过").bold = True
-            p.add_run(" - 未发现相同或近似的在先商标")
-        else:
-            high_risk = similarity.get('high_risk_count', 0)
-            medium_risk = similarity.get('medium_risk_count', 0)
-
-            p = doc.add_paragraph()
-            if high_risk > 0:
-                p.add_run(f"❌ 高风险").bold = True
+        if status == "ok":
+            marks = sim.get("similar_marks", [])
+            if not marks:
+                _add_lines(doc, "✅ 检索完成，未发现相同或近似商标。")
             else:
-                p.add_run(f"⚠️  存在冲突").bold = True
-            p.add_run(f" - 发现 {len(similar_marks)} 个近似商标")
+                _add_lines(doc, f"发现 {len(marks)} 条可能冲突的在先商标。")
+                t = doc.add_table(rows=len(marks) + 1, cols=5)
+                t.style = 'Light Grid Accent 1'
+                for i, h in enumerate(["商标名称", "注册号", "状态", "类别", "申请人"]):
+                    t.rows[0].cells[i].text = h
+                for i, m in enumerate(marks, 1):
+                    t.rows[i].cells[0].text = str(m.get("name", ""))
+                    t.rows[i].cells[1].text = str(m.get("registration_number", ""))
+                    t.rows[i].cells[2].text = str(m.get("status", ""))
+                    t.rows[i].cells[3].text = ", ".join(map(str, m.get("classes", [])))
+                    t.rows[i].cells[4].text = str(m.get("applicant", ""))
+                if sim.get("article"):
+                    _add_lines(doc, f"依据：{sim['article']}")
+        elif status == "skipped":
+            _add_lines(doc, "⏭️ 已在本次审查中跳过在先商标检索，结论不含冲突判断。")
+        elif status == "not_configured":
+            _add_lines(doc, "⚠️ 未配置商标数据源，未执行在先商标检索。")
+            _add_lines(doc, "本报告结论不包含在先商标冲突判断，请另行委托专业检索。")
+        else:
+            _add_lines(doc, f"❌ 在先商标检索失败：{sim.get('error','未知错误')}")
+            _add_lines(doc, "本报告结论不包含在先商标冲突判断。")
 
-            if high_risk > 0:
-                doc.add_paragraph(f"其中高度近似: {high_risk} 个")
-            if medium_risk > 0:
-                doc.add_paragraph(f"中度近似: {medium_risk} 个")
+        # 4. 结论边界
+        caveats = overall.get("caveats") or []
+        if caveats:
+            doc.add_heading("4. 结论边界", level=2)
+            for c in caveats:
+                _add_lines(doc, f"• {c}", style='List Bullet')
 
-            # 近似商标列表
-            doc.add_heading("近似商标列表", level=3)
+        if overall.get("ai_alternatives"):
+            doc.add_heading("5. AI 修改建议", level=2)
+            for i, alt in enumerate(overall["ai_alternatives"], 1):
+                _add_lines(doc, f"{i}. {alt}")
 
-            if similar_marks:
-                table = doc.add_table(rows=len(similar_marks) + 1, cols=5)
-                table.style = 'Light Grid Accent 1'
-
-                # 表头
-                headers = ['商标名称', '注册号', '状态', '类别', '申请人']
-                for i, header in enumerate(headers):
-                    table.rows[0].cells[i].text = header
-
-                # 数据
-                for i, mark in enumerate(similar_marks, 1):
-                    table.rows[i].cells[0].text = mark.get('name', '')
-                    table.rows[i].cells[1].text = mark.get('registration_number', '')
-                    table.rows[i].cells[2].text = mark.get('status', '')
-                    table.rows[i].cells[3].text = ", ".join(map(str, mark.get('classes', [])))
-                    table.rows[i].cells[4].text = mark.get('applicant', '')
-
-        # 4. 综合建议
-        doc.add_heading("4. 综合评估与建议", level=2)
-
-        doc.add_paragraph(f"基于以上审查结果，该商标的注册成功率评估为: {overall['success_rate']}%")
-        doc.add_paragraph(f"风险等级: {overall['risk_level']}")
-        doc.add_paragraph(f"建议措施: {overall['recommendation']}")
-
-        # 分隔线
         if idx < len(results):
             doc.add_page_break()
 
-    # 免责声明
     doc.add_page_break()
     doc.add_heading("免责声明", level=1)
-    doc.add_paragraph(
-        "本报告基于《中华人民共和国商标法》及相关法规进行技术性分析，仅供参考，不构成法律意见。"
-        "商标注册存在审查的主观性和案例的不确定性，实际审查结果可能与本报告评估存在差异。"
-        "重要商标注册决策建议咨询专业知识产权代理机构或律师。"
-    )
+    _add_lines(
+        doc,
+        "本报告基于公开法规文本与内置规则库进行技术性比对，用于申请前的风险预筛，"
+        "不构成法律意见，也不能替代商标代理机构的正式检索与专业判断。")
+    _add_lines(
+        doc,
+        "商标审查包含审查员的主观判断，且个案情况可能不同；实际审查结果可能与本报告结论存在差异。"
+        "涉及重要商标的注册决策，请咨询依法设立的商标代理机构或执业律师。")
+    _add_lines(
+        doc,
+        "规则库未覆盖全部法条与全部商品/服务类别；报告仅在已执行且已列明的检查项范围内作出结论。")
 
-    # 保存文档
     doc.save(output_path)
 
 
 def generate_pdf_report(results: List[Dict], output_path: str):
-    """生成PDF格式报告"""
-    # 先生成docx，再转换为PDF（需要额外的库）
     try:
         from docx2pdf import convert
     except ImportError:
-        print("❌ PDF生成需要安装 docx2pdf")
-        print("   可选方案1: pip install docx2pdf")
-        print("   可选方案2: 先生成docx，手动转换为PDF")
-        # 回退到生成docx
-        docx_path = output_path.replace('.pdf', '.docx')
+        docx_path = output_path.rsplit('.', 1)[0] + '.docx'
         generate_docx_report(results, docx_path)
-        print(f"✅ 已生成Word版本: {docx_path}")
+        print("⚠️  未安装 docx2pdf，已改为生成 Word 版本。")
+        print("    安装后可生成 PDF：pip install docx2pdf（Windows 需本机安装 Word）")
+        print(f"✅ Word 版本: {docx_path}")
         return
 
-    # 先生成临时docx
-    import tempfile
-    with tempfile.NamedTemporaryFile(suffix='.docx', delete=False) as tmp:
-        docx_path = tmp.name
-
+    import tempfile, os
+    fd, docx_path = tempfile.mkstemp(suffix='.docx')
+    os.close(fd)
     generate_docx_report(results, docx_path)
-
-    # 转换为PDF
     try:
         convert(docx_path, output_path)
-        Path(docx_path).unlink()  # 删除临时文件
-    except Exception as e:
-        print(f"❌ PDF转换失败: {e}")
-        print(f"   已保留Word版本: {docx_path}")
-
-
-def generate_json_report(results: List[Dict], output_path: str):
-    """生成JSON格式报告"""
-    import json
-    with open(output_path, 'w', encoding='utf-8') as f:
-        json.dump(results, f, ensure_ascii=False, indent=2)
+    finally:
+        try:
+            os.unlink(docx_path)
+        except OSError:
+            pass
 
 
 if __name__ == "__main__":
-    # 测试报告生成
-    test_result = {
-        "trademark_name": "测试商标",
-        "classes": [9, 42],
-        "review_date": "2026-10-28",
-        "prohibited_check": {
-            "passed": False,
-            "violations": [
-                {
-                    "type": "geographic",
-                    "keyword": "北京",
-                    "article": "商标法第十条第二款",
-                    "description": "含有县级以上行政区划地名",
-                    "severity": "medium"
-                }
-            ],
-            "risk_score": 0.2
-        },
-        "distinctiveness_check": {
-            "passed": True,
-            "issues": [],
-            "risk_score": 0.0
-        },
-        "similarity_check": {
-            "passed": True,
-            "similar_marks": [],
-            "risk_score": 0.0
-        },
-        "overall": {
-            "risk_score": 0.06,
-            "risk_level": "低风险",
-            "success_rate": 94,
-            "recommendation": "可以注册，但建议确认地名是否具有其他含义"
-        }
+    demo = {
+        "trademark_name": "示例",
+        "classes": [9],
+        "review_date": "2026-11-11",
+        "law": {"version": "2019", "label": "2019年修正",
+                "effective_from": "2019-11-01",
+                "counterpart_label": "2026年修订",
+                "counterpart_effective_from": "2027-01-01"},
+        "prohibited_check": {"violations": [], "hard_block": False},
+        "distinctiveness_check": {"issues": []},
+        "similarity_check": {"status": "not_configured"},
+        "overall": {"verdict": "低风险", "risk_level": "低风险", "success_rate": 90,
+                    "completeness": "partial",
+                    "caveats": ["在先商标未检索：未配置数据源，本结论不含冲突判断。"],
+                    "recommendation": "规则层面未发现明显障碍"},
     }
-
-    generate_report([test_result], "test_report.docx", format="docx")
-    print("✅ 测试报告已生成: test_report.docx")
+    generate_report([demo], "demo_report.docx", format="docx")
+    print("demo_report.docx")

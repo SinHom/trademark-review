@@ -24,6 +24,10 @@ trademark_review:
     cache_enabled: true  # 是否启用查询缓存
     cache_ttl: 3600      # 缓存有效期（秒）
 
+  # 审查依据版本
+  law:
+    version: "2019"   # 2019（现行有效）| 2026（2027-01-01 起施行）
+
   # 审查选项
   review:
     skip_similarity_check: false  # 是否跳过近似性检索

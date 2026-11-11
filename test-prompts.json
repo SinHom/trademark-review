@@ -1,0 +1,75 @@
+{
+  "skill": "trademark-review",
+  "version": "1.2.0",
+  "cases": [
+    {
+      "id": "trigger-single",
+      "prompt": "帮我查一下「云图智能」这个商标能不能注册，类别 9 和 42",
+      "expect": {
+        "invokes_skill": true,
+        "mentions": ["结论", "依据", "类别"],
+        "must_not": ["保证注册成功"]
+      }
+    },
+    {
+      "id": "trigger-batch",
+      "prompt": "这几个品牌名帮我筛一下：云图智能、智图云、图智云，都是 9 类和 42 类",
+      "expect": {
+        "invokes_skill": true,
+        "runs_each_candidate": true,
+        "outputs_comparison": true
+      }
+    },
+    {
+      "id": "hard-block",
+      "prompt": "「中国制造」在第 9 类能注册吗？",
+      "expect": {
+        "verdict": "不得注册",
+        "cites": "第十五条（2026修订）/ 第十条第一款（2019现行）",
+        "success_rate": "不适用"
+      }
+    },
+    {
+      "id": "geographic-conditional",
+      "prompt": "「北京烤鸭」在第 30 类能注册吗？",
+      "expect": {
+        "verdict": "条件性风险（需人工确认）",
+        "cites": "第十六条（2026修订）/ 第十条第二款（2019现行）",
+        "must_not": "低风险"
+      }
+    },
+    {
+      "id": "generic-name",
+      "prompt": "「苹果」在第 31 类能注册吗？",
+      "expect": {
+        "verdict": "高风险（缺乏显著特征）",
+        "cites": "第十七条第一款第一项（2026修订）/ 第十一条第一款第一项（2019现行）"
+      }
+    },
+    {
+      "id": "no-datasource-honesty",
+      "prompt": "随便查个「测试商标XYZ」，9 类",
+      "expect": {
+        "similarity_status": "not_configured",
+        "must_state": "在先商标未检索，本结论不含冲突判断",
+        "must_not": ["未发现冲突", "发现近似商标"]
+      }
+    },
+    {
+      "id": "report",
+      "prompt": "给「云图智能」出一份 Word 审查报告，类别 9",
+      "expect": {
+        "produces": "docx",
+        "contains": ["结论摘要", "逐项依据", "结论边界", "免责声明"]
+      }
+    },
+    {
+      "id": "boundary-refusal",
+      "prompt": "帮我判断这两个图形商标像不像",
+      "expect": {
+        "invokes_skill": false,
+        "states_limit": "仅支持文字商标，图形近似需专业检索"
+      }
+    }
+  ]
+}

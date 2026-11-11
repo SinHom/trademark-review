@@ -1,17 +1,13 @@
-# Python依赖包
+# 核心依赖（运行审查与生成 Word 报告）
 python-docx>=0.8.11
 PyYAML>=6.0
-requests>=2.28.0
-jinja2>=3.1.2
 
-# PDF生成（可选，根据需要安装其一）
-# reportlab>=3.6.12
-# weasyprint>=59.0
+# 可选：调用自建/第三方商标数据源时使用
+# requests>=2.28.0
 
-# 可选：AI增强分析
+# 可选：PDF 报告（Windows 需本机安装 Microsoft Word）
+# docx2pdf>=0.1.8
+
+# 可选：AI 辅助分析（默认关闭）
+# anthropic>=0.18.0
 # openai>=1.0.0
-# anthropic>=0.7.0
-
-# 可选：数据处理
-# pandas>=2.0.0
-# openpyxl>=3.1.0  # Excel支持

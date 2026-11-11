@@ -176,34 +176,28 @@ class ExampleCustomAPI(TrademarkAPIAdapter):
         return []
 
 
-def load_adapter(config: Dict) -> TrademarkAPIAdapter:
+def load_adapter(config: Dict):
     """
-    根据配置加载适配器
+    根据配置加载适配器。
 
-    Args:
-        config: 配置字典，包含adapter_class等配置
+    重要约定：
+      - 未配置数据源时返回 None，由调用方标注"未检索"。
+      - 绝不自动回退到 Mock 数据（虚构的近似商标会直接污染审查结论）。
+      - 如需演示数据，必须显式配置
+        adapter_class: "references.trademark_api_adapter.MockTrademarkAPI"
 
     Returns:
-        TrademarkAPIAdapter实例
+        TrademarkAPIAdapter 实例，或 None
     """
     adapter_class = config.get("api", {}).get("adapter_class")
 
     if not adapter_class:
-        print("⚠️  未配置商标查询API，使用Mock数据（仅供演示）")
-        return MockTrademarkAPI()
+        return None
 
-    # 动态导入并实例化适配器
-    try:
-        module_name, class_name = adapter_class.rsplit(".", 1)
-        module = __import__(module_name, fromlist=[class_name])
-        adapter_cls = getattr(module, class_name)
+    module_name, class_name = adapter_class.rsplit(".", 1)
+    module = __import__(module_name, fromlist=[class_name])
+    adapter_cls = getattr(module, class_name)
 
-        # 从环境变量或配置中获取API密钥
-        import os
-        api_key = os.getenv("TRADEMARK_API_KEY")
-
-        return adapter_cls(api_key=api_key)
-    except Exception as e:
-        print(f"❌ 加载适配器失败: {e}")
-        print("   回退到Mock模式")
-        return MockTrademarkAPI()
+    import os
+    api_key = os.getenv("TRADEMARK_API_KEY")
+    return adapter_cls(api_key=api_key)
