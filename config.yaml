@@ -1,0 +1,44 @@
+# 商标审查配置文件
+trademark_review:
+  # 风险阈值
+  risk_threshold:
+    high: 0.7      # 高风险阈值（≥0.7为高风险）
+    medium: 0.4    # 中风险阈值（0.4-0.7为中风险，<0.4为低风险）
+
+  # 默认商标类别（如未指定）
+  default_classes: [9, 35, 42]
+
+  # 报告配置
+  report:
+    language: zh-CN
+    include_legal_text: true      # 是否在报告中包含完整法条
+    include_case_references: false # 是否包含案例参考
+    logo_path: null                # 企业logo路径（可选）
+    watermark: null                # 水印文字（可选）
+
+  # API配置
+  api:
+    adapter_class: null  # 自定义适配器类路径，如 "mypackage.MyAdapter"
+    timeout: 30          # 接口超时时间（秒）
+    retry: 3             # 重试次数
+    cache_enabled: true  # 是否启用查询缓存
+    cache_ttl: 3600      # 缓存有效期（秒）
+
+  # 审查选项
+  review:
+    skip_similarity_check: false  # 是否跳过近似性检索
+    enable_ai_analysis: false     # 是否启用AI辅助分析（需额外配置）
+    strict_mode: false            # 严格模式（更保守的评估）
+
+  # 法规更新检查
+  law_update_check:
+    enabled: true
+    check_interval: 86400  # 检查间隔（秒），默认每天
+    check_url: "https://flk.npc.gov.cn/"
+    last_check: null
+
+  # 输出配置
+  output:
+    default_format: docx  # docx 或 pdf
+    include_metadata: true
+    compress_pdf: false
