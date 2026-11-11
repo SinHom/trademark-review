@@ -7,12 +7,19 @@
 """
 
 import sys
+import os
 from pathlib import Path
 
-# 添加父目录到path
-sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
+# 添加父目录到path，支持多种运行方式
+current_dir = Path(__file__).parent
+parent_dir = current_dir.parent
+sys.path.insert(0, str(parent_dir))
+sys.path.insert(0, str(parent_dir / "scripts"))
 
-from review import TrademarkReviewer
+# 设置工作目录（确保能找到config.yaml等文件）
+os.chdir(parent_dir)
+
+from scripts.review import TrademarkReviewer
 
 
 def test_descriptive_detection():

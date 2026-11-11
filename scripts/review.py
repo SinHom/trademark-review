@@ -20,6 +20,13 @@ if sys.platform == 'win32':
     sys.stdout = codecs.getwriter('utf-8')(sys.stdout.buffer, 'strict')
     sys.stderr = codecs.getwriter('utf-8')(sys.stderr.buffer, 'strict')
 
+# 导入AI分析器
+try:
+    from ai_analyzer import AITrademarkAnalyzer
+    AI_AVAILABLE = True
+except ImportError:
+    AI_AVAILABLE = False
+
 
 class TrademarkReviewer:
     """商标审查器"""
@@ -42,6 +49,15 @@ class TrademarkReviewer:
 
         # 加载法律法规（后续实现）
         self.laws = {}
+
+        # 初始化AI分析器
+        self.ai_analyzer = None
+        if AI_AVAILABLE:
+            ai_config = self.config.get("trademark_review", {}).get("ai_analysis", {})
+            if ai_config.get("enabled", False):
+                self.ai_analyzer = AITrademarkAnalyzer(ai_config)
+                if self.ai_analyzer.enabled:
+                    print("✨ AI辅助分析已启用")
 
     def load_risk_rules(self):
         """加载风险评估规则"""
@@ -108,14 +124,26 @@ class TrademarkReviewer:
 
         for keyword in geographic_keywords:
             if keyword in trademark_name:
-                violations.append({
+                violation = {
                     "type": "geographic",
                     "keyword": keyword,
                     "article": "商标法第十条第二款",
                     "description": "含有县级以上行政区划地名",
                     "severity": "medium",
                     "note": "除非地名具有其他含义或作为集体/证明商标"
-                })
+                }
+
+                # AI辅助分析：判断地名是否有其他含义
+                if self.ai_analyzer and self.ai_analyzer.enabled:
+                    ai_result = self.ai_analyzer.analyze_geographic_name(trademark_name, keyword)
+                    if ai_result.get("has_other_meaning"):
+                        violation["ai_analysis"] = ai_result
+                        violation["note"] = f"AI分析：{ai_result['explanation']} (置信度: {ai_result['confidence']:.2f})"
+                        if ai_result["confidence"] > 0.7:
+                            # 高置信度判定有其他含义，降低严重度
+                            violation["severity"] = "low"
+
+                violations.append(violation)
 
         # 3. 检查误导性词汇
         for keyword in self.risk_rules["prohibited_keywords"]["misleading"]:
@@ -206,16 +234,31 @@ class TrademarkReviewer:
         if not issues:
             risk_score = 0.0
         elif descriptive_count >= 2:
-            risk_score = 0.6  # 多个描述性词汇组合，风险较高
+            risk_score = 0.7  # 多个描述性词汇组合，风险较高（提升从0.6到0.7）
+        elif descriptive_count == 1:
+            risk_score = 0.4  # 单个描述性词汇（提升从0.2到0.4）
         else:
-            risk_score = min(0.5, len(issues) * 0.2)
+            risk_score = min(0.5, len(issues) * 0.25)  # 其他问题
 
         return {
             "passed": len(issues) == 0,
             "issues": issues,
             "risk_score": risk_score,
-            "note": "如能证明经过使用获得显著特征，仍可注册"
+            "note": "如能证明经过使用获得显著特征，仍可注册",
+            "ai_analysis": self._ai_analyze_distinctiveness(trademark_name, classes, issues) if self.ai_analyzer else None
         }
+
+    def _ai_analyze_distinctiveness(self, trademark_name: str, classes: List[int], issues: List[Dict]) -> Optional[Dict]:
+        """AI辅助显著性分析"""
+        if not self.ai_analyzer or not self.ai_analyzer.enabled:
+            return None
+
+        try:
+            result = self.ai_analyzer.analyze_distinctiveness(trademark_name, classes, issues)
+            return result
+        except Exception as e:
+            print(f"⚠️  AI显著性分析失败: {e}")
+            return None
 
     def check_similarity(self, trademark_name: str, classes: List[int]) -> Dict:
         """
@@ -340,6 +383,18 @@ class TrademarkReviewer:
         # 计算预估注册成功率
         success_rate = max(0, min(100, int((1 - total_risk_score) * 100)))
 
+        # AI生成修改建议（如果启用且存在问题）
+        ai_alternatives = []
+        all_issues = (
+            prohibited_result.get("violations", []) +
+            distinctiveness_result.get("issues", [])
+        )
+        if self.ai_analyzer and self.ai_analyzer.enabled and all_issues:
+            print("🤖 AI正在生成修改建议...")
+            ai_alternatives = self.ai_analyzer.generate_alternatives(
+                trademark_name, all_issues, classes
+            )
+
         result = {
             "trademark_name": trademark_name,
             "classes": classes,
@@ -351,7 +406,8 @@ class TrademarkReviewer:
                 "risk_score": round(total_risk_score, 2),
                 "risk_level": risk_level,
                 "success_rate": success_rate,
-                "recommendation": recommendation
+                "recommendation": recommendation,
+                "ai_alternatives": ai_alternatives if ai_alternatives else None
             }
         }
 

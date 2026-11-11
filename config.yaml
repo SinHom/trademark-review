@@ -30,6 +30,18 @@ trademark_review:
     enable_ai_analysis: false     # 是否启用AI辅助分析（需额外配置）
     strict_mode: false            # 严格模式（更保守的评估）
 
+  # AI辅助分析配置
+  ai_analysis:
+    enabled: false                # 是否启用AI分析
+    provider: "anthropic"         # anthropic / openai
+    model: "claude-3-5-sonnet-20241022"  # 使用的模型
+    api_key: null                 # API密钥（优先使用环境变量）
+    features:
+      geographic_analysis: true   # 地名多义性分析
+      distinctiveness_deep: true  # 显著性深度分析
+      semantic_similarity: true   # 语义相似度分析
+      alternative_generation: true # 生成修改建议
+
   # 法规更新检查
   law_update_check:
     enabled: true
