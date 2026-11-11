@@ -11,6 +11,15 @@ from abc import ABC, abstractmethod
 class TrademarkAPIAdapter(ABC):
     """商标查询接口适配器基类"""
 
+    def __init__(self, api_key: Optional[str] = None, **kwargs):
+        """
+        Args:
+            api_key: 由 TRADEMARK_API_KEY 环境变量注入；实现方按需使用。
+                     子类可覆盖 __init__，也可完全不覆盖——只实现
+                     search_similar() 即可被 load_adapter() 加载。
+        """
+        self.api_key = api_key
+
     @abstractmethod
     def search_similar(self, trademark_name: str, classes: List[int]) -> List[Dict]:
         """
@@ -199,5 +208,15 @@ def load_adapter(config: Dict):
     adapter_cls = getattr(module, class_name)
 
     import os
+    import inspect
+
     api_key = os.getenv("TRADEMARK_API_KEY")
-    return adapter_cls(api_key=api_key)
+    # 用签名探测是否接受 api_key，而不是 try/except TypeError——
+    # 后者会把子类 __init__ 内部的真实 TypeError 一并吞掉。
+    try:
+        params = inspect.signature(adapter_cls.__init__).parameters
+    except (TypeError, ValueError):
+        params = {}
+    accepts_key = "api_key" in params or any(
+        p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values())
+    return adapter_cls(api_key=api_key) if accepts_key else adapter_cls()

@@ -13,6 +13,8 @@
 import sys
 import os
 import json
+import re
+import unicodedata
 import argparse
 from pathlib import Path
 from typing import List, Dict, Optional
@@ -63,7 +65,8 @@ class TrademarkReviewer:
         self.ai_analyzer = None
         if AI_AVAILABLE:
             ai_config = cfg.get("ai_analysis", {})
-            if ai_config.get("enabled", False):
+            # 兼容历史键名 enable_ai_analysis
+            if ai_config.get("enabled", ai_config.get("enable_ai_analysis", False)):
                 self.ai_analyzer = AITrademarkAnalyzer(ai_config)
                 if self.ai_analyzer.enabled:
                     print("✨ AI辅助分析已启用")
@@ -86,6 +89,31 @@ class TrademarkReviewer:
             return {}
         with open(path, 'r', encoding='utf-8') as f:
             return json.load(f)
+
+    # ---------- 文本归一化 ----------
+
+    _SEPARATOR_RE = re.compile(r"[\s·・.。\-_—/\\|、，,()（）\[\]【】{}<>《》\"'“”‘’]+")
+
+    # 禁用词检测用的繁→简映射（只覆盖禁用/敏感词涉及的字，不做全文转换）
+    _TRAD_TO_SIMP = str.maketrans({
+        "國": "国", "華": "华", "黨": "党", "軍": "军", "會": "会",
+        "聯": "联", "紅": "红", "爾": "尔", "醫": "医", "學": "学",
+        "體": "体", "區": "区", "縣": "县", "鎮": "镇", "鄉": "乡",
+        "員": "员", "長": "长", "門": "门", "東": "东", "廣": "广",
+        "臺": "台", "灣": "湾", "慶": "庆", "濟": "济", "陽": "阳",
+        "鐵": "铁", "銀": "银", "龍": "龙", "鳳": "凤", "馬": "马",
+    })
+
+    @classmethod
+    def normalize_name(cls, name: str) -> str:
+        """
+        归一化商标名称后再做关键词匹配，防止"中 国""中·国""中国。"
+        "中國"等分隔符 / 全角半角 / 简繁混写绕过禁用词检测。
+        """
+        if not name:
+            return ""
+        s = unicodedata.normalize("NFKC", name).strip().translate(cls._TRAD_TO_SIMP)
+        return cls._SEPARATOR_RE.sub("", s)
 
     # ---------- 法条引用 ----------
 
@@ -138,57 +166,104 @@ class TrademarkReviewer:
     # ---------- 审查项 ----------
 
     def check_prohibited_clause(self, trademark_name: str) -> Dict:
-        """禁用标志审查。命中即构成绝对障碍（不得注册）。"""
+        """
+        禁用标志审查，分三档：
+
+        1. 绝对障碍（不得注册）：名称整体即国家名称，或与国家名称/国家象征
+           高度接近，或属欺骗性标志。
+        2. 条件性障碍（需人工确认）：含国家名称但整体不构成近似（指南第三章
+           列举了描述客观事物、报刊名称、经批准的企事业简称等例外）、含政治
+           敏感词、含民族宗教元素、含县级以上地名。
+        3. 低置信提示：常见词形式的县级地名，不改变结论。
+        """
         violations = []
         kw_rules = self.risk_rules.get("prohibited_keywords", {})
+        normalized = self.normalize_name(trademark_name)
 
-        for keyword in kw_rules.get("political", []):
-            if keyword in trademark_name:
+        # 国家名称：仅"整体即国名"构成绝对障碍；其余一律条件性。
+        # 指南第三章：含国家名称但整体不构成近似的，存在描述客观事物、
+        # 报刊名称、经批准的企事业单位简称等例外（如中国移动、中华铅笔）。
+        national_terms = [k for k in kw_rules.get("national_name", []) if k and k in normalized]
+        # 最长匹配优先：命中"中华人民共和国"时不再重复报"中国""中华"
+        longest = max(national_terms, key=len) if national_terms else None
+        for keyword in national_terms:
+            if keyword != longest:
+                continue
+            if normalized == keyword:
                 violations.append(self._violation(
                     "national_name", keyword=keyword,
-                    description="与国家名称等相同或近似",
+                    description=f"与我国国家名称「{keyword}」相同",
                     severity="high", consequence="不得注册"))
+            else:
+                violations.append(self._violation(
+                    "national_name", keyword=keyword,
+                    description=f"含有国家名称「{keyword}」，整体是否构成近似需人工判断",
+                    severity="medium", consequence="需确认是否整体近似或落入法定例外",
+                    note="指南第三章：描述客观事物、报刊/期刊名称、经批准的企事业单位简称等情形一般不适用禁用条款"))
 
         for keyword in kw_rules.get("national_symbols", []):
-            if keyword in trademark_name:
+            if keyword in normalized:
                 violations.append(self._violation(
                     "national_name", keyword=keyword,
                     description="与国家象征相同或近似",
                     severity="high", consequence="不得注册"))
 
         for keyword in kw_rules.get("misleading", []):
-            if keyword in trademark_name:
+            if keyword and keyword in normalized:
                 violations.append(self._violation(
                     "misleading", keyword=keyword,
                     description="带有欺骗性，容易使公众产生误认",
                     severity="high", consequence="不得注册"))
 
+        # 已被欺骗性条款整体命中的（如"中国制造"命中"中国"），
+        # 不再重复计国家名称条件项——避免同一标识报两条不同依据
+        misleading_keywords = [k for k in kw_rules.get("misleading", [])
+                               if k and k in normalized]
+        violations = [v for v in violations
+                      if not (v.get("check_key") == "national_name"
+                              and v.get("consequence") != "不得注册"
+                              and any(v.get("keyword", "") in mk
+                                      for mk in misleading_keywords))]
+
+        # 政治敏感词：不等于国家名称，不构成绝对禁用
+        for keyword in kw_rules.get("political_sensitive", []):
+            if keyword in normalized:
+                violations.append(self._violation(
+                    "public_order", keyword=keyword,
+                    description=f"含有政治敏感词「{keyword}」，需判断是否损害国家尊严或造成误认",
+                    severity="medium", consequence="需确认是否构成不良影响"))
+
         for keyword in kw_rules.get("ethnic_religious", []):
-            if keyword in trademark_name:
+            if keyword in normalized:
                 violations.append(self._violation(
                     "ethnic_discrimination", keyword=keyword,
-                    description="可能带有民族歧视性或不良影响",
-                    severity="medium", consequence="需人工确认"))
+                    description=f"含有民族/宗教元素「{keyword}」，需判断是否构成民族歧视或不良影响",
+                    severity="medium", consequence="需确认是否带有民族歧视性或不良影响"))
 
         # 地名：属条件性障碍（具有其他含义的除外）
         geo = self._load_geo()
         geo_hits = {}   # keyword -> (severity, kind)
+        # 已被国家名称整体覆盖的部分不再参与地名匹配
+        # （如"中华人民共和国"中的"共和"不是县级地名"共和县"）
+        geo_scope = normalized
+        for hit in national_terms:
+            geo_scope = geo_scope.replace(hit, "")
 
         if geo:
             for name in geo.get("provinces", []):
-                if name and name in trademark_name:
+                if name and name in geo_scope:
                     geo_hits[name] = ("medium", "省级行政区")
             for name in geo.get("prefecture_cities", []):
-                if name and name in trademark_name:
+                if name and name in geo_scope:
                     geo_hits.setdefault(name, ("medium", "地级行政区"))
             for name in geo.get("counties_full", []):
-                if name and name in trademark_name:
+                if name and name in geo_scope:
                     geo_hits.setdefault(name, ("medium", "县级行政区"))
             common_bare = set(geo.get("common_bare", []))
             for name in geo.get("counties_bare", []):
                 if len(name) < 2:
                     continue
-                if name in trademark_name:
+                if name in geo_scope:
                     if name in common_bare:
                         geo_hits.setdefault(name, ("low", "县级行政区（常见词，低置信）"))
                     else:
@@ -219,9 +294,14 @@ class TrademarkReviewer:
 
             violations.append(v)
 
+        # 含国家名称但非整体相同：结论未决（取决于能否落入法定例外）
+        pending_national = any(
+            v.get("check_key") == "national_name"
+            and str(v.get("consequence", "")).startswith("需确认")
+            for v in violations)
+
         hard_block = any(v["consequence"] == "不得注册" for v in violations)
         manual_review = any(v["consequence"].startswith("需确认") for v in violations)
-
         if hard_block:
             risk_score = 1.0
         elif manual_review:
@@ -236,6 +316,7 @@ class TrademarkReviewer:
             "violations": violations,
             "hard_block": hard_block,
             "manual_review_required": manual_review,
+            "pending_national": pending_national,
             "risk_score": risk_score,
         }
 
@@ -286,12 +367,6 @@ class TrademarkReviewer:
                 issues.append(self._violation(
                     "distinctiveness_generic", term=term, class_no=cls,
                     description=desc, severity=severity))
-
-        if len(trademark_name) < 2:
-            issues.append(self._violation(
-                "distinctiveness_lack",
-                description="名称过短，缺乏显著特征",
-                severity="medium"))
 
         if not issues:
             risk_score = 0.0
@@ -371,8 +446,14 @@ class TrademarkReviewer:
             return {"status": "error", "passed": None, "similar_marks": [],
                     "risk_score": 0.0, "error": f"接口调用失败: {e}"}
 
-        high = [m for m in marks if m.get("similarity_score", 0) > 0.8]
-        medium = [m for m in marks if 0.6 < m.get("similarity_score", 0) <= 0.8]
+        thresholds = self.risk_rules.get("similarity_thresholds", {})
+        high_threshold = thresholds.get("high_risk", 0.8)
+        medium_threshold = thresholds.get("medium_risk", 0.6)
+
+        high = [m for m in marks
+                if m.get("similarity_score", 0) > high_threshold]
+        medium = [m for m in marks
+                  if medium_threshold < m.get("similarity_score", 0) <= high_threshold]
 
         if high:
             risk_score, passed = 0.8, False
@@ -396,6 +477,9 @@ class TrademarkReviewer:
     # ---------- 主流程 ----------
 
     def review(self, trademark_name: str, classes: Optional[List[int]] = None) -> Dict:
+        if not trademark_name or not trademark_name.strip():
+            raise ValueError("商标名称不能为空或仅含空白字符")
+        trademark_name = trademark_name.strip()
         if classes is None:
             classes = (self.config.get("trademark_review", {})
                        .get("default_classes", [9, 35, 42]))
@@ -414,6 +498,7 @@ class TrademarkReviewer:
 
         hard_block = prohibited["hard_block"]
         manual_review = prohibited["manual_review_required"]
+        pending_national = prohibited.get("pending_national", False)
         sim_status = similarity["status"]
         completeness = "complete" if sim_status == "ok" else "partial"
 
@@ -424,10 +509,14 @@ class TrademarkReviewer:
             success_rate = None
             recommendation = "命中禁用标志条款，不得注册；建议更换名称。"
         else:
+            weights = self.risk_rules.get("risk_weights", {})
+            w_prohibited = weights.get("prohibited_clause", 0.4)
+            w_distinctive = weights.get("distinctiveness", 0.3)
+            w_similarity = weights.get("similarity", 0.3)
             total_risk_score = (
-                prohibited["risk_score"] * 0.4 +
-                distinctive["risk_score"] * 0.3 +
-                similarity["risk_score"] * 0.3
+                prohibited["risk_score"] * w_prohibited +
+                distinctive["risk_score"] * w_distinctive +
+                similarity["risk_score"] * w_similarity
             )
             if manual_review:
                 total_risk_score = max(total_risk_score, 0.45)
@@ -464,12 +553,13 @@ class TrademarkReviewer:
 
             if manual_review and not (generic_exact or whole_descriptive):
                 verdict = "条件性风险（需人工确认）"
-                recommendation = "含地名，须确认其是否具有其他含义；无其他含义则不得注册。"
-
+                recommendation = self._manual_review_advice(prohibited)
             success_rate = max(0, min(100, int((1 - total_risk_score) * 100)))
             if completeness != "complete":
                 # 未做在先商标检索时，不给满分结论
                 success_rate = min(success_rate, 80)
+            if pending_national:
+                success_rate = None
 
         caveats = []
         if sim_status == "not_configured":
@@ -534,7 +624,10 @@ class TrademarkReviewer:
         print(f"审查依据: {result['law']['label']}（{result['law']['effective_from']} 施行）")
         print(f"结论: {overall['verdict']}")
         if overall["success_rate"] is None:
-            print("预估成功率: 不适用（命中禁用条款）")
+            if result["overall"].get("verdict") == "不得注册":
+                print("预估成功率: 不适用（命中禁用条款）")
+            else:
+                print("预估成功率: 不适用（结论未决，取决于能否落入法定例外）")
         else:
             print(f"预估成功率: {overall['success_rate']}%（启发式估算，非统计）")
         print(f"建议: {overall['recommendation']}")
@@ -595,6 +688,26 @@ class TrademarkReviewer:
         print("=" * 60)
 
     @staticmethod
+    def _manual_review_advice(prohibited: Dict) -> str:
+        """按命中的检查项生成"需人工确认"的具体建议，不写死成地名。"""
+        keys = {v.get("check_key") for v in prohibited.get("violations", [])
+                if str(v.get("consequence", "")).startswith("需确认")}
+        advice = []
+        if "geographic_name" in keys:
+            advice.append("含县级以上地名：须确认其是否具有其他含义；无其他含义则不得注册。")
+        if "national_name" in keys:
+            advice.append("含国家名称：须判断整体是否构成近似；"
+                          "如属指南第三章列举的例外（客观事物、报刊名称、"
+                          "经批准的企事业单位简称且长期使用形成唯一对应关系），可主张不适用禁用条款。")
+        if "public_order" in keys:
+            advice.append("含政治敏感词：须判断是否损害国家尊严或造成公众误认。")
+        if "ethnic_discrimination" in keys:
+            advice.append("含民族/宗教元素：须判断是否构成民族歧视或产生不良影响。")
+        if not advice:
+            advice.append("存在需人工判断的风险点，建议由专业人士复核。")
+        return "".join(advice)
+
+    @staticmethod
     def _today() -> str:
         from datetime import datetime
         return datetime.now().strftime("%Y-%m-%d")
@@ -628,17 +741,31 @@ def main():
 
     trademarks = []
     if args.batch:
-        with open(args.batch, 'r', encoding='utf-8') as f:
-            trademarks = [line.strip() for line in f if line.strip()]
+        try:
+            with open(args.batch, 'r', encoding='utf-8') as f:
+                trademarks = [line.strip() for line in f if line.strip()]
+        except OSError as e:
+            parser.error(f"无法读取批量文件 {args.batch}: {e}")
     elif args.trademarks:
-        trademarks = args.trademarks
+        trademarks = [t.strip() for t in args.trademarks]
     else:
         parser.print_help()
         return
 
+    # 输入校验：空名/空白名不得给出任何结论（空名会穿透所有规则）
+    empty = [i for i, t in enumerate(trademarks) if not t]
+    if empty or not trademarks:
+        parser.error("商标名称不能为空或仅含空白字符")
+
     classes = None
     if args.classes:
-        classes = [int(c.strip()) for c in args.classes.split(",")]
+        try:
+            classes = [int(c.strip()) for c in args.classes.split(",")]
+        except ValueError:
+            parser.error(f"类别必须是 1-45 的整数，收到: {args.classes}")
+        bad = [c for c in classes if not 1 <= c <= 45]
+        if bad:
+            parser.error(f"尼斯类别范围为 1-45，越界: {bad}")
 
     reviewer = TrademarkReviewer(config_path=args.config)
 

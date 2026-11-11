@@ -185,6 +185,131 @@ def test_report_generation():
     print("✅ Word 报告生成正常")
 
 
+def test_national_name_tiers():
+    """国家名称分档：整体即国名→不得注册；仅含国名→条件性（指南第三章例外）。"""
+    r = R()
+    assert r.review("中国", classes=[9])["overall"]["verdict"] == "不得注册"
+    for name, cls in (("中华铅笔", 16), ("中国移动", 38)):
+        res = r.review(name, classes=[cls])
+        assert res["overall"]["verdict"] == "条件性风险（需人工确认）", f"{name}: {res['overall']['verdict']}"
+        # 建议文案必须按命中的检查项生成，不能写死"含地名"
+        assert "国家名称" in res["overall"]["recommendation"], res["overall"]["recommendation"]
+        assert "地名" not in res["overall"]["recommendation"], "含国名的建议不得误写成地名"
+        # 结论未决时不给成功率数字
+        assert res["overall"]["success_rate"] is None, "含国名未决时不应给成功率"
+    # 产地误导仍按欺骗性硬阻断
+    assert r.review("中国制造", classes=[9])["overall"]["verdict"] == "不得注册"
+    print("✅ 国家名称分档正确（含国名不再一律硬阻断，建议文案按命中项生成）")
+
+
+def test_violation_dedup():
+    """关键词互为子串时不得重复报（中华人民共和国 ≠ 国名+中华+共和县）。"""
+    r = R()
+    res = r.review("中华人民共和国", classes=[9])
+    vs = res["prohibited_check"]["violations"]
+    assert len(vs) == 1, f"应只报 1 条，实际 {[(v['keyword'], v['check_key']) for v in vs]}"
+    assert vs[0]["keyword"] == "中华人民共和国"
+    # 欺骗性整体命中时不再重复报国家名称条件项
+    res2 = r.review("中国制造", classes=[9])
+    keys = [(v["keyword"], v["check_key"]) for v in res2["prohibited_check"]["violations"]]
+    assert len(keys) == 1 and keys[0][1] == "misleading", keys
+    print("✅ 子串重复与跨条款重复已消除")
+
+
+def test_normalization_bypass():
+    """分隔符 / 全角 / 简繁不得绕过禁用词检测。"""
+    r = R()
+    for name in ("中 国", "中·国", "中-国", "中国。", "中國"):
+        verdict = r.review(name, classes=[9])["overall"]["verdict"]
+        assert verdict == "不得注册", f"{name} 绕过了国名检测：{verdict}"
+    print("✅ 分隔符/简繁归一化生效")
+
+
+def test_hard_block_and_manual_review_not_confused():
+    """地名 consequence 同时含"需确认"与"不得注册"，不得被误判成硬阻断。"""
+    r = R()
+    res = r.review("北京烤鸭", classes=[30])
+    assert res["prohibited_check"]["hard_block"] is False
+    assert res["prohibited_check"]["manual_review_required"] is True
+    print("✅ 硬阻断与条件性判定未串味")
+
+
+def test_review_api_rejects_empty():
+    """空名防护必须在 API 层，不能只在 CLI 层。"""
+    r = R()
+    for name in ("", " ", "\t"):
+        try:
+            r.review(name, [9])
+        except ValueError:
+            continue
+        raise AssertionError(f"{name!r} 未被拦截")
+    print("✅ 空名在 API 层被拦截")
+
+
+def test_ethnic_religious_is_conditional():
+    """民族宗教元素 → 条件性风险，不能静默落在低风险。"""
+    r = R()
+    res = r.review("清真牛肉", classes=[29])
+    assert res["prohibited_check"]["manual_review_required"] is True
+    assert res["overall"]["verdict"] == "条件性风险（需人工确认）", res["overall"]["verdict"]
+    print("✅ 民族宗教词触发条件性风险")
+
+
+def test_single_char_not_falsely_flagged():
+    """单字商标（郎/雕等）不得被自造的"名称过短"规则误伤。"""
+    r = R()
+    res = r.review("郎", classes=[33])
+    assert not any("过短" in i["description"] for i in res["distinctiveness_check"]["issues"])
+    assert res["overall"]["verdict"] == "低风险"
+    print("✅ 单字商标不再误报缺乏显著特征")
+
+
+def test_cli_rejects_bad_input():
+    """空名与越界类别必须被拒绝，而不是给出结论。"""
+    import subprocess
+    for args in (["   ", "--class", "9"], ["云图智能", "--class", "0"],
+                 ["云图智能", "--class", "46"], ["云图智能", "--class", "abc"]):
+        out = subprocess.run([sys.executable, "scripts/review.py", *args], cwd=str(ROOT),
+                             capture_output=True, text=True, encoding="utf-8", errors="replace")
+        assert out.returncode != 0, f"{args} 应被拒绝"
+        assert "Traceback" not in out.stderr, f"{args} 不应抛堆栈"
+        assert "结论" not in out.stdout, f"{args} 不应输出结论"
+    print("✅ 非法输入被友好拒绝")
+
+
+def test_ai_config_keys():
+    """config.yaml 的 ai_analysis 键名必须能真正打开 AI 分析。"""
+    import types
+    fake = types.ModuleType("anthropic")
+    fake.Anthropic = lambda **kw: object()
+    sys.modules.setdefault("anthropic", fake)
+    os.environ.setdefault("ANTHROPIC_API_KEY", "test-key")
+    from scripts.ai_analyzer import AITrademarkAnalyzer
+    assert AITrademarkAnalyzer({"enabled": True, "provider": "anthropic"}).enabled is True
+    assert AITrademarkAnalyzer({"enabled": False}).enabled is False
+    print("✅ AI 配置键名生效")
+
+
+def test_adapter_minimal_implementation():
+    """按文档只实现 search_similar 的适配器必须能被加载。"""
+    from references.trademark_api_adapter import TrademarkAPIAdapter, load_adapter
+
+    class Minimal(TrademarkAPIAdapter):
+        def search_similar(self, name, classes):
+            return []
+
+    import references.trademark_api_adapter as mod
+    original = getattr(mod, "Minimal", None)
+    mod.Minimal = Minimal
+    try:
+        adapter = load_adapter({"api": {"adapter_class": "references.trademark_api_adapter.Minimal"}})
+        assert adapter is not None
+    finally:
+        if original is None:
+            delattr(mod, "Minimal")
+    print("✅ 最小适配器可直接加载")
+
+
 if __name__ == "__main__":
     print("开始运行回归测试...")
     print("=" * 60)
@@ -204,6 +329,16 @@ if __name__ == "__main__":
         test_cli_direct_run,
         test_batch_and_json,
         test_report_generation,
+        test_national_name_tiers,
+        test_violation_dedup,
+        test_normalization_bypass,
+        test_hard_block_and_manual_review_not_confused,
+        test_review_api_rejects_empty,
+        test_ethnic_religious_is_conditional,
+        test_single_char_not_falsely_flagged,
+        test_cli_rejects_bad_input,
+        test_ai_config_keys,
+        test_adapter_minimal_implementation,
     ]
     failed = 0
     for t in tests:

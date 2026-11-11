@@ -22,9 +22,16 @@ class AITrademarkAnalyzer:
             config: 配置字典，包含api_provider、api_key等
         """
         self.config = config or {}
-        self.enabled = self.config.get("enable_ai_analysis", False)
-        self.api_provider = self.config.get("ai_provider", "anthropic")  # anthropic/openai
-        self.model = self.config.get("ai_model", "claude-3-5-sonnet-20241022")
+        # 兼容历史键名（enable_ai_analysis/ai_provider/ai_model）与
+        # config.yaml 现行键名（enabled/provider/model）
+        self.enabled = bool(self.config.get(
+            "enabled", self.config.get("enable_ai_analysis", False)))
+        self.api_provider = (self.config.get("provider")
+                             or self.config.get("ai_provider")
+                             or "anthropic")
+        self.model = (self.config.get("model")
+                      or self.config.get("ai_model")
+                      or "claude-3-5-sonnet-20241022")
 
         # 初始化客户端
         self.client = None

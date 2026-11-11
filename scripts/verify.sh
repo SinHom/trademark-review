@@ -13,13 +13,14 @@ PY="${PYTHON:-python3}"
 fail() { echo "❌ verify $LEVEL 失败: $1"; exit 1; }
 
 # ---------- L0 静态 ----------
-"$PY" - <<'PY' || exit 1
+if ! "$PY" - <<'PY'
 import json, pathlib, sys
 try:
     import yaml
 except ImportError:
     print("缺少 PyYAML"); sys.exit(1)
-files = list(pathlib.Path('scripts').glob('*.py'))
+files = list(pathlib.Path('scripts').glob('*.py')) + list(pathlib.Path('tests').glob('*.py')) \
+        + list(pathlib.Path('references').glob('*.py'))
 for f in files:
     compile(f.read_text(encoding='utf-8'), str(f), 'exec')
 for f in pathlib.Path('references').rglob('*.json'):
@@ -27,7 +28,9 @@ for f in pathlib.Path('references').rglob('*.json'):
 yaml.safe_load(pathlib.Path('config.yaml').read_text(encoding='utf-8'))
 json.loads(pathlib.Path('test-prompts.json').read_text(encoding='utf-8'))
 PY
-[ $? -ne 0 ] && fail "静态检查"
+then
+  fail "静态检查（语法/JSON/YAML）"
+fi
 
 if [ "$LEVEL" = "l0" ]; then echo "✅ verify l0 通过（语法 + JSON/YAML 解析）"; exit 0; fi
 
@@ -38,7 +41,7 @@ echo "$OUT" | tail -1 | grep -q "所有测试通过" || { echo "$OUT" | tail -20
 if [ "$LEVEL" = "l1" ]; then echo "✅ verify l1 通过（15 项回归测试）"; exit 0; fi
 
 # ---------- L2 门禁 + 一致性 ----------
-"$PY" - <<'PY' || exit 1
+if ! "$PY" - <<'PY'
 import subprocess, sys, re, pathlib
 gates = {
     ("中国制造", 9): "不得注册",
@@ -69,8 +72,24 @@ for key, m in r.article_map["mapping"].items():
         if not num or v not in laws: continue
         art = num.split("第",1)[1].split("条")[0]
         assert f"第{art}条" in laws[v], f"{key}/{v} 找不到 第{art}条"
+
+# 权重与阈值必须自洽（改坏会让分级静默失真）
+import json as _json
+_rules = _json.loads(pathlib.Path("references/risk_rules.json").read_text(encoding="utf-8"))
+_w = _rules.get("risk_weights", {})
+assert abs(sum(_w.values()) - 1.0) < 1e-6, f"risk_weights 之和应为 1.0，实际 {sum(_w.values())}"
+_t = _rules.get("similarity_thresholds", {})
+assert _t["medium_risk"] < _t["high_risk"], "相似度阈值必须递增"
+for _k in ("political",):
+    assert _k not in _rules.get("prohibited_keywords", {}), f"遗留旧键 {_k}"
+
+# 关键词表不得含空串/null（空串会恒真命中，导致全盘误判）
+for _cat, _words in _rules.get("prohibited_keywords", {}).items():
+    assert all(isinstance(w, str) and w.strip() for w in _words), f"关键词表 {_cat} 含空值"
 PY
-[ $? -ne 0 ] && fail "门禁或一致性检查"
+then
+  fail "门禁或一致性检查"
+fi
 
 # 密钥扫描
 if grep -rInE "(sk-[A-Za-z0-9]{10,}|gho_[A-Za-z0-9]{10,}|api[_-]?key\s*[:=]\s*['\"][A-Za-z0-9]{8,})" \
