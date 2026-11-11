@@ -1,0 +1,41 @@
+name: verify
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ["3.9", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: L2 full verification
+        run: bash scripts/verify.sh l2
+        env:
+          PYTHON: python
+
+      - name: Regenerate examples and check for drift
+        shell: bash
+        env:
+          PYTHON: python
+        run: |
+          bash scripts/demo.sh
+          # case-*.txt 必须与重放结果一致，防止示例产物陈旧
+          git diff --exit-code -- examples/case-01-clean.txt \
+            examples/case-02-geographic.txt examples/case-03-hard-block.txt \
+            examples/case-04-national.txt examples/case-05-generic.txt \
+          || { echo "::error::examples/ 与当前代码输出不一致，请运行 bash scripts/demo.sh 后提交"; exit 1; }

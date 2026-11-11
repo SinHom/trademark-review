@@ -58,13 +58,15 @@ class AITrademarkAnalyzer:
             print(f"⚠️  AI客户端初始化失败: {e}")
             self.enabled = False
 
-    def analyze_geographic_name(self, trademark_name: str, geographic_keyword: str) -> Dict:
+    def analyze_geographic_name(self, trademark_name: str, geographic_keyword: str,
+                                article_ref: str = "") -> Dict:
         """
         AI分析地名是否具有其他含义
 
         Args:
             trademark_name: 商标名称
             geographic_keyword: 检测到的地名
+            article_ref: 条号引用（由调用方从 article_map 取得，本模块不硬编码）
 
         Returns:
             {
@@ -80,12 +82,13 @@ class AITrademarkAnalyzer:
                 "confidence": 0.0
             }
 
+        legal_basis = article_ref or "《商标法》关于县级以上行政区划地名的规定"
         prompt = f"""作为商标法专家，分析商标名称中的地名是否具有其他含义。
 
 商标名称：{trademark_name}
 地名：{geographic_keyword}
 
-根据《商标法》第十条第二款：县级以上行政区划的地名不得作为商标，但地名具有其他含义或者作为集体商标、证明商标组成部分的除外。
+依据 {legal_basis}：县级以上行政区划的地名不得作为商标，但地名具有其他含义或者作为集体商标、证明商标组成部分的除外。
 
 请判断：
 1. "{geographic_keyword}"在"{trademark_name}"中是否有地名以外的含义？
@@ -126,7 +129,7 @@ class AITrademarkAnalyzer:
             }
 
     def analyze_distinctiveness(self, trademark_name: str, classes: List[int],
-                               basic_issues: List[Dict]) -> Dict:
+                               basic_issues: List[Dict], article_ref: str = "") -> Dict:
         """
         AI深度分析商标显著性
 
@@ -151,6 +154,7 @@ class AITrademarkAnalyzer:
 
         issues_text = "\n".join([f"- {issue['description']}" for issue in basic_issues]) if basic_issues else "无"
 
+        legal_basis = article_ref or "《商标法》关于显著特征的规定"
         prompt = f"""作为商标法专家，深度分析商标的显著性。
 
 商标名称：{trademark_name}
@@ -159,7 +163,7 @@ class AITrademarkAnalyzer:
 基础规则检测结果：
 {issues_text}
 
-根据《商标法》第十一条：
+依据 {legal_basis}，下列标志不得作为商标注册：
 1. 仅有本商品的通用名称、图形、型号的
 2. 仅直接表示商品的质量、主要原料、功能、用途、重量、数量及其他特点的
 3. 其他缺乏显著特征的

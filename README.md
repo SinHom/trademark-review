@@ -3,7 +3,8 @@
 > 提交商标注册前，先花 10 秒知道它卡在哪一条法——以及哪些事这个工具**没有**查。
 
 [![Python](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org/)
-[![Tests](https://img.shields.io/badge/tests-25%2F25%20passing-brightgreen)](tests/test_review.py)
+[![verify](https://github.com/SinHom/trademark-review/actions/workflows/verify.yml/badge.svg)](https://github.com/SinHom/trademark-review/actions/workflows/verify.yml)
+[![Tests](https://img.shields.io/badge/tests-25%2F25-brightgreen)](tests/test_review.py)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Law](https://img.shields.io/badge/依据-商标法2019现行版%20%7C%202026版并列标注-informational)](references/article_map.json)
 

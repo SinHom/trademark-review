@@ -5,6 +5,24 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.3.4] - 2026-11-11
+
+### 修复
+
+- **AI 提示词硬编码条号**：`ai_analyzer.py` 里写死《商标法》第十条第二款、第十一条。
+  改为由调用方从 `article_map.json` 取现行条号后传入，AI 在 2026 版下也不会说错条号。
+- `review.py` 的 `cite()` 文档示例去掉具体条号，避免被扫描器误判。
+
+### 工程
+
+- **`verify.sh` L2 新增条号扫描**：代码内出现"第X条"即失败（注释除外），
+  把"条号只从 article_map 取"这条硬约定变成可执行检查。已实测能拦住故意注入的违规。
+- **新增 GitHub Actions CI**（`.github/workflows/verify.yml`）：
+  Ubuntu + Windows × Python 3.9 + 3.12 跑完整 L2；并重放 `demo.sh` 校验 examples 无漂移。
+  README 的 tests 徽章改为引用真实 CI 状态。
+- 新增 `.gitattributes`：示例产物与 shell 脚本固定 LF，避免 Windows autocrlf
+  造成 CI 假漂移。
+
 ## [1.3.3] - 2026-11-11
 
 ### 新增（可复核性显性化）

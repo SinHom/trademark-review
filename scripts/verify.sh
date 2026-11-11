@@ -86,6 +86,15 @@ for _k in ("political",):
 # 关键词表不得含空串/null（空串会恒真命中，导致全盘误判）
 for _cat, _words in _rules.get("prohibited_keywords", {}).items():
     assert all(isinstance(w, str) and w.strip() for w in _words), f"关键词表 {_cat} 含空值"
+
+# 代码内不得硬编码条号（唯一事实来源是 article_map.json）
+import re as _re
+_art = _re.compile(r"第[一二三四五六七八九十百零]+条")
+for _f in list(pathlib.Path("scripts").glob("*.py")) + [pathlib.Path("references/trademark_api_adapter.py")]:
+    for _i, _line in enumerate(_f.read_text(encoding="utf-8").splitlines(), 1):
+        if _line.lstrip().startswith("#"):
+            continue
+        assert not _art.search(_line), f"{_f}:{_i} 硬编码条号，应从 article_map.json 取"
 PY
 then
   fail "门禁或一致性检查"

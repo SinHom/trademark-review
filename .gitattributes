@@ -1,0 +1,7 @@
+# 示例产物由 scripts/demo.sh 生成，CI 会重放并比对。
+# 必须固定 LF，否则 Windows 的 autocrlf 会在 checkout 时改写行尾，
+# 造成"示例与代码输出不一致"的假漂移。
+examples/*.txt text eol=lf
+
+# Shell 脚本同样固定 LF，避免 CRLF 导致 bash 解释器报错
+*.sh text eol=lf

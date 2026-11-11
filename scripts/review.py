@@ -121,10 +121,12 @@ class TrademarkReviewer:
         """
         返回某检查项在现行版与 2026 版的条号。
 
+        条号一律从 article_map.json 读取，本函数不含任何硬编码条号。
+
         返回：
-          {"current": "《商标法》（2019年修正）第十条第一款第一项",
-           "counterpart": "《商标法》（2026年修订，2027-01-01施行）第十五条第一款第二项",
-           "display": "《商标法》（2019年修正）第十条第一款第一项〔2026年修订：第十五条第一款第二项〕"}
+          {"current":     "《商标法》（<现行版标签>）<现行版条号>",
+           "counterpart": "《商标法》（<对照版标签>，<施行日>施行）<对照版条号>",
+           "display":     "<现行版>〔<对照版标签>：<对照版条号>〕"}
         """
         versions = self.article_map["versions"]
         mapping = self.article_map["mapping"].get(check_key)
@@ -286,7 +288,8 @@ class TrademarkReviewer:
                 consequence=consequence)
 
             if self.ai_analyzer and self.ai_analyzer.enabled:
-                ai_result = self.ai_analyzer.analyze_geographic_name(trademark_name, keyword)
+                ai_result = self.ai_analyzer.analyze_geographic_name(
+                    trademark_name, keyword, self.cite("geographic_name")["current"])
                 v["ai_analysis"] = ai_result
                 if ai_result.get("has_other_meaning") and ai_result.get("confidence", 0) > 0.7:
                     v["severity"] = "low"
@@ -402,7 +405,8 @@ class TrademarkReviewer:
         if not self.ai_analyzer or not self.ai_analyzer.enabled:
             return None
         try:
-            return self.ai_analyzer.analyze_distinctiveness(trademark_name, classes, issues)
+            return self.ai_analyzer.analyze_distinctiveness(
+                trademark_name, classes, issues, self.cite("distinctiveness")["current"])
         except Exception as e:
             print(f"⚠️  AI显著性分析失败: {e}")
             return None
