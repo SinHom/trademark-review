@@ -5,6 +5,39 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.3.0] - 2026-11-11
+
+### 新增
+
+- ✨ **审查审理指南改用结构化全文**：官方 PDF 为 422 页扫描件（无文字层），
+  原 OCR 版存在形近字误识。现改用 43 章结构化转录（22.5 万字），
+  已与官方 PDF 逐章抽查核对关键条款（"原则上禁止注册和使用""判断'仅直接表示'…"等一致）。
+  `scripts/fetch_guideline.sh` 支持一键重新生成，`--ocr` 保留官方 PDF 的 OCR 回退路径。
+
+- ✨ **通用名称库覆盖 1-45 类**：从 23 类扩到 45 类，369 个术语；
+  新增 `class_titles` 便于报告展示类别名称。
+
+- ✨ **全国行政区划地名库**：`references/geographic_names.json`
+  覆盖 34 个省级、333 个地级、2942 个县级行政区。
+  匹配分三层：
+  - 省级/地级：简称裸匹配
+  - 县级：全称匹配 + 去后缀简称
+  - 常见词（东方、朝阳、和平等 88 个）：按低置信提示，不抬高结论
+
+- ✨ 回归测试 12 → 15：新增县级地名、常见词不误伤、45 类覆盖校验。
+
+### 清理
+
+- 🧹 删除 12 份历史过程文档（DELIVERY / PROJECT_COMPLETE / SUMMARY / RELEASE_REPORT /
+  BUG_FIX_REPORT / CHANGELOG_v1.1 / quality_improvement_plan / DOCUMENTATION /
+  TEST / QUICKSTART / CHEATSHEET / INSTALL）。这些文档含"88分/A-级""91页"等
+  未做法条对账的自评结论，保留会误导。追溯请用 `git log` 与本文件。
+
+### 改进
+
+- 📈 描述性词汇的单字词（新/大/小/老/好）只在整名相同时提示，消除"沙县小吃"误报"小"的噪声
+- 📈 摘要输出区分"❌ 硬性命中"与"ℹ️ 低置信提示"
+
 ## [1.2.0] - 2026-11-11
 
 ### 修复（法条准确性）

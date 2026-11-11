@@ -2,7 +2,7 @@
 name: trademark-review
 description: 中国商标注册前合规审查。输入商标名称与类别，逐条比对现行《商标法》及其实施条例、审查审理指南，给出"不得注册/条件性风险/风险分级"结论、法条原文依据、以及必须人工确认的清单。不绑定商标数据源，可接入任意查询接口。适用于品牌命名预筛、批量候选评估、申请前风险自查。
 origin: Custom
-version: 1.2.0
+version: 1.3.0
 ---
 
 # 商标合规审查
@@ -132,21 +132,22 @@ scripts/review.py            审查引擎（结论 + 法条引用）
 scripts/report_generator.py  Word/JSON 报告
 scripts/ai_analyzer.py       可选 AI 分析（默认关闭）
 references/article_map.json  条号映射（唯一事实来源）
-references/risk_rules.json   关键词与按类别通用名称库
+references/risk_rules.json   关键词库 + 尼斯分类 1-45 类通用名称
+references/geographic_names.json  全国 34 省级 / 333 地级 / 2942 县级地名
 references/trademark_api_adapter.py  数据源适配器接口
 references/laws/             法规原文
   trademark_law_2019.md        现行有效
   trademark_law_2026.md        2027-01-01 施行
   trademark_regulation_2014.md 实施条例
   collective_certification_2024.md 集体/证明商标规定
-  examination_guideline_2021.md 审查审理指南（OCR）
-tests/test_review.py         12 个回归测试
+  examination_guideline_2021.md 审查审理指南（43 章结构化全文）
+tests/test_review.py         15 个回归测试
 ```
 
 ## 能力边界（必须向用户如实说明）
 
 - 仅文字商标；图形、声音、三维、动态标志不支持
-- 通用名称库覆盖 23 个常用类别，非全部 45 类
-- 地名库为省级 + 主要地级市，未覆盖全部县级地名
+- 通用名称库覆盖 1-45 类，但每类仅收录常见通用名称，非穷举
+- 地名库覆盖 34 省级 / 333 地级 / 2942 县级；"是否具有其他含义"仍需人工判断
 - 近似判断依赖外部数据源的质量与召回
-- 审查指南为 OCR 文本，引用时以官方 PDF 为准
+- 审查指南为结构化转录，正式引用建议回查官方 PDF

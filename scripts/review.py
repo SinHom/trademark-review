@@ -80,6 +80,13 @@ class TrademarkReviewer:
         with open(path, 'r', encoding='utf-8') as f:
             return json.load(f)
 
+    def _load_geo(self) -> Dict:
+        path = self.skill_dir / "references" / "geographic_names.json"
+        if not path.exists():
+            return {}
+        with open(path, 'r', encoding='utf-8') as f:
+            return json.load(f)
+
     # ---------- 法条引用 ----------
 
     def cite(self, check_key: str) -> Dict[str, str]:
@@ -164,26 +171,53 @@ class TrademarkReviewer:
                     severity="medium", consequence="需人工确认"))
 
         # 地名：属条件性障碍（具有其他含义的除外）
-        geographic_keywords = []
-        geographic_keywords.extend(kw_rules.get("geographic_provincial", []))
-        geographic_keywords.extend(kw_rules.get("geographic_major_cities", []))
+        geo = self._load_geo()
+        geo_hits = {}   # keyword -> (severity, kind)
 
-        for keyword in geographic_keywords:
-            if keyword in trademark_name:
-                v = self._violation(
-                    "geographic_name", keyword=keyword,
-                    description="含有县级以上行政区划名称",
-                    severity="medium",
-                    consequence="需确认是否具有其他含义；无其他含义则不得注册")
+        if geo:
+            for name in geo.get("provinces", []):
+                if name and name in trademark_name:
+                    geo_hits[name] = ("medium", "省级行政区")
+            for name in geo.get("prefecture_cities", []):
+                if name and name in trademark_name:
+                    geo_hits.setdefault(name, ("medium", "地级行政区"))
+            for name in geo.get("counties_full", []):
+                if name and name in trademark_name:
+                    geo_hits.setdefault(name, ("medium", "县级行政区"))
+            common_bare = set(geo.get("common_bare", []))
+            for name in geo.get("counties_bare", []):
+                if len(name) < 2:
+                    continue
+                if name in trademark_name:
+                    if name in common_bare:
+                        geo_hits.setdefault(name, ("low", "县级行政区（常见词，低置信）"))
+                    else:
+                        geo_hits.setdefault(name, ("medium", "县级行政区"))
+        else:
+            for name in kw_rules.get("geographic_provincial", []) + kw_rules.get("geographic_major_cities", []):
+                if name in trademark_name:
+                    geo_hits[name] = ("medium", "省级/地级行政区")
 
-                if self.ai_analyzer and self.ai_analyzer.enabled:
-                    ai_result = self.ai_analyzer.analyze_geographic_name(trademark_name, keyword)
-                    v["ai_analysis"] = ai_result
-                    if ai_result.get("has_other_meaning") and ai_result.get("confidence", 0) > 0.7:
-                        v["severity"] = "low"
-                        v["consequence"] = "AI判断具有其他含义（需人工复核）"
+        for keyword, (severity, kind) in geo_hits.items():
+            if severity == "low":
+                consequence = "低置信提示：可能含县级地名，不改变结论"
+            else:
+                consequence = "需确认是否具有其他含义；无其他含义则不得注册"
 
-                violations.append(v)
+            v = self._violation(
+                "geographic_name", keyword=keyword,
+                description=f"含有{kind}名称「{keyword}」",
+                severity=severity,
+                consequence=consequence)
+
+            if self.ai_analyzer and self.ai_analyzer.enabled:
+                ai_result = self.ai_analyzer.analyze_geographic_name(trademark_name, keyword)
+                v["ai_analysis"] = ai_result
+                if ai_result.get("has_other_meaning") and ai_result.get("confidence", 0) > 0.7:
+                    v["severity"] = "low"
+                    v["consequence"] = "AI判断具有其他含义（需人工复核）"
+
+            violations.append(v)
 
         hard_block = any(v["consequence"] == "不得注册" for v in violations)
         manual_review = any(v["consequence"].startswith("需确认") for v in violations)
@@ -221,7 +255,12 @@ class TrademarkReviewer:
             all_terms = descriptive_terms
 
         for term in all_terms:
-            if term and term in trademark_name:
+            if not term:
+                continue
+            if len(term) == 1 and trademark_name != term:
+                # 单字词噪声过大，只在整名相同时提示
+                continue
+            if term in trademark_name:
                 descriptive_count += 1
                 issues.append(self._violation(
                     "distinctiveness_descriptive", term=term,
@@ -504,7 +543,11 @@ class TrademarkReviewer:
 
         violations = result["prohibited_check"]["violations"]
         if violations:
-            print(f"  ❌ 禁用标志: {len(violations)} 项")
+            high_like = [v for v in violations if v.get("severity") != "low"]
+            if high_like:
+                print(f"  ❌ 禁用标志: {len(high_like)} 项")
+            else:
+                print(f"  ℹ️  禁用标志: {len(violations)} 项低置信提示（不改变结论）")
             for v in violations[:5]:
                 print(f"     - {v['description']}")
                 print(f"       依据: {v['article']}")

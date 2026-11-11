@@ -73,6 +73,33 @@ def test_geographic_conditional():
     print("✅ 地名 → 条件性风险，不再误判为低风险")
 
 
+def test_county_level_geographic():
+    """县级地名也要命中。"""
+    r = R()
+    res = r.review("沙县小吃", classes=[43])
+    keys = [v.get("keyword") for v in res["prohibited_check"]["violations"]]
+    assert "沙县" in keys, f"应命中县级地名沙县，实际: {keys}"
+    assert res["prohibited_check"]["manual_review_required"] is True
+    print("✅ 县级地名命中（沙县）")
+
+
+def test_common_word_not_inflated():
+    """常见词形的县级地名按低置信处理，不抬高结论。"""
+    r = R()
+    res = r.review("东方甄选", classes=[35])
+    assert res["overall"]["verdict"] == "低风险", res["overall"]["verdict"]
+    lows = [v for v in res["prohibited_check"]["violations"] if v.get("severity") == "low"]
+    assert lows, "应保留低置信提示"
+    print("✅ 常见词地名不抬高结论（东方甄选仍为低风险）")
+
+
+def test_all_45_classes_covered():
+    r = R()
+    assert len(r.risk_rules["generic_terms_by_class"]) == 45
+    assert len(r.risk_rules["class_titles"]) == 45
+    print("✅ 通用名称覆盖 45/45 类")
+
+
 def test_descriptive():
     r = R()
     res = r.review("优质服务", classes=[35])
@@ -166,6 +193,9 @@ if __name__ == "__main__":
         test_hard_block_political,
         test_hard_block_misleading,
         test_geographic_conditional,
+        test_county_level_geographic,
+        test_common_word_not_inflated,
+        test_all_45_classes_covered,
         test_descriptive,
         test_generic_by_class,
         test_clean_mark,
