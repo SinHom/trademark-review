@@ -1,56 +1,63 @@
 # trademark-review
 
-> 品牌名提交注册前，先花 10 秒知道它卡在哪一条法。
+> 提交商标注册前，先花 10 秒知道它卡在哪一条法——以及哪些事这个工具**没有**查。
 
 [![Python](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org/)
-[![Tests](https://img.shields.io/badge/tests-15%2F15%20passing-brightgreen)](tests/test_review.py)
+[![Tests](https://img.shields.io/badge/tests-25%2F25%20passing-brightgreen)](tests/test_review.py)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Law](https://img.shields.io/badge/依据-商标法2019现行版%20%7C%202026版并列标注-informational)](references/article_map.json)
 
-输入一个商标名和类别，输出的是：**能不能注册、卡在哪一条法、依据原文是什么、哪些必须人工确认**。
+输入商标名和类别，输出四件事：**能不能注册、卡在哪一条法、依据原文是什么、哪些必须人工确认**。
 
-它不猜成功率，也不假装检索过在先商标——没做的事会明确写"未检索"。
+它不猜成功率，不假装检索过在先商标，也不会把"含中国"一律判成不得注册——
+没做的事会明确写"未执行"，模棱两可的事会说"需确认"而不是编一个分数。
 
----
+## 30 秒看到结果
 
-## 你什么时候需要它
+```bash
+git clone https://github.com/SinHom/trademark-review.git && cd trademark-review
+pip install -r requirements.txt
+python scripts/review.py "北京烤鸭" --class 30
+```
 
-1. **品牌命名阶段**：手上有 5 个候选名，想知道哪几个连提交都不用提交。
-2. **申请前自查**：代理机构报价前，先自己过一遍禁用条款和显著性问题。
-3. **内部合规预审**：市场部要用的名字，法务需要一个可留档的书面结论。
-
-## 它会交付什么
+真实输出（`examples/case-02-geographic.txt`，未编辑）：
 
 ```text
-商标名称: 北京烤鸭
-审查依据: 2019年修正（2019-11-01 施行）
 结论: 条件性风险（需人工确认）
 预估成功率: 55%（启发式估算，非统计）
 
 逐项结果:
   ❌ 禁用标志: 1 项
-     - 含有县级以上行政区划名称
+     - 含有省级行政区名称「北京」
        依据: 《商标法》（2019年修正）第十条第二款〔2026年修订：第十六条〕
   ✅ 显著特征: 未发现规则层问题
   ⚠️  在先商标: 未检索（未配置数据源）
-      → 本结论不含在先商标冲突判断
+
+📋 本次检查范围:
+  ✅ 禁用标志（国家名称/国家象征/欺骗性/政治敏感/民族宗教）
+  ✅ 显著性（描述性词汇、尼斯分类 1-45 类通用名称）
+  ✅ 县级以上行政区划地名（省级/地级/县级）
+  ⛔ 在先商标近似检索：未执行（未配置数据源）
+  ⛔ 图形、声音、三维、动态商标
+  ⛔ 跨类别近似与类似商品/服务判定
+
+🗂  规则库: v2.1.0（更新于 2026-11-11），条号映射截至 2026-11-11
 ```
 
-加 `--report --format docx` 生成 Word 报告：结论摘要表、逐条法条依据、结论边界、免责声明。
+五个典型案例的完整输出在 [`examples/`](examples/)，由 `bash scripts/demo.sh` 一键重放。
 
-## 快速开始
+## 为什么值得装，而不是直接问 Agent
 
-```bash
-git clone https://github.com/SinHom/trademark-review.git
-cd trademark-review
-pip install -r requirements.txt
+直接问大模型"这个商标能不能注册"，你会得到一段读起来很顺、条号经常编错的回答。
+这个工具的价值在**可复核**：
 
-python scripts/review.py "云图智能" --class 9,42
-python scripts/review.py "北京烤鸭" --class 30
-python scripts/review.py "云图智能" --class 9,42 --report --format docx
-```
-
-无个人路径依赖、无数据库、无必填密钥。未配置数据源时，在先商标一栏会显示"未检索"。
+| | 直接问 Agent | 本工具 |
+|---|---|---|
+| 条号来源 | 模型记忆，会编 | `article_map.json` 单一事实来源，测试校验条号能在法规原文中定位 |
+| 同一输入 | 每次可能不同 | 确定性输出，可 diff、可留档 |
+| 检索了什么 | 说不清 | 报告里逐条列出"已执行 / 未执行" |
+| 法规版本 | 可能混淆 | 2019 现行版出结论，括号并列 2026 修订版条号 |
+| 离线 | 不能 | 完全离线，规则与法规原文都在仓库里 |
 
 ## 触发方式
 
@@ -66,16 +73,17 @@ python scripts/review.py "云图智能" --class 9,42 --report --format docx
 
 ## 它和同类有什么不同
 
-| | 本工具 | chktm | W0ff/trademark-tools | 商业代理机构 |
-|---|---|---|---|---|
-| 数据源 | **可插拔，随你接** | USPTO 全量本地库 | Serper + 网页 | 官方系统 |
-| 法条依据 | **逐条映射 + 条文原文** | 无 | 评分因子 | 人工判断 |
-| 中国商标法 | **是** | 否（美国） | 否（美国为主） | 是 |
-| 在先商标 | 依赖你接的数据源 | 内置 | 网页检索 | 官方检索 |
-| 结论形式 | 不得注册 / 条件性 / 分级 | HIGH/MEDIUM/LOW | 威胁评分 | 专业意见 |
-| 费用 | 开源 | 开源 | 开源 | 按件收费 |
+| | 本工具 | cat-xierluo/trademark-assistant | nickschuetz/chktm | jordanteague/TMrex | W0ff/trademark-tools |
+|---|---|---|---|---|---|
+| 法域 | 中国 | 中国 | 美国 | 美国 | 未限定 |
+| 法条依据 | **逐条映射 + 条文原文入库** | 依赖指南摘要 | 无 | DuPont 因素说明 | 无 |
+| 条号双版本 | **2019 现行 / 2026 修订并列** | 提示时点，未做映射 | — | — | — |
+| 在先商标 | 可插拔数据源（未配置则明示"未检索"） | 类别规划 + 初筛 | USPTO 本地全量库 | USPTO 80GB 本地库 | 网页搜索 |
+| 形态 | CLI + Skill，零依赖运行 | Skill 集合 | CLI / Web / MCP | Skill + Python | 插件三件套 |
+| 输出 | 结论 + 条号 + 检查范围清单 | 报告 | HIGH/MEDIUM/LOW | 报告 | 报告 |
+| 公开活跃度 | 新 | 126 安装 / 788 star | 2 star | 12 star | 0 star，已停更 |
 
-不吹"替代代理机构"。它做的是把明显不合规的名字挡在提交之前。
+不吹"替代代理机构"。它做的是把明显不合规的名字挡在提交之前，并把"没查什么"写清楚。
 
 ## 安全边界
 
@@ -103,19 +111,23 @@ references/laws/
   examination_guideline_2021.md   商标审查审理指南（43 章结构化全文，22.5 万字）
 tests/test_review.py              25 个回归测试
 scripts/verify.sh                 三层验证（l0/l1/l2）
+scripts/demo.sh                   重新生成 examples/ 下全部示例产物
 scripts/fetch_guideline.sh        指南全文重建
 scripts/fetch_geodata.sh          行政区划库重建
+examples/                         真实运行产物（case-01..05 + Word 报告）
 ```
 
 ## 验证与测试
 
 ```bash
-python tests/test_review.py
+bash scripts/verify.sh l0    # 语法 + JSON/YAML（秒级）
+bash scripts/verify.sh l1    # 25 项回归测试
+bash scripts/verify.sh l2    # 全量 + 5 个门禁 + 条号一致性 + 配置自洽 + 密钥扫描
 ```
 
-覆盖：条号与法规原文一致性、禁用条款硬阻断、省级/县级地名、常见词地名不误伤、
-45 类通用名称覆盖、描述性/通用名称、未配置数据源的诚实标注、跳过检索的声明、
-CLI 直跑、批量、Word 报告。
+覆盖：条号与法规原文一致性、禁用条款硬阻断、国家名称分档、省级/县级地名、常见词地名不误伤、
+45 类通用名称覆盖、描述性/通用名称、分隔符与简繁绕过、子串重复报告、
+未配置数据源的诚实标注、跳过检索的声明、空名与非法类别拒绝、CLI 直跑、批量、Word 报告。
 
 关键回归门（改代码必须保持）：
 

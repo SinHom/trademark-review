@@ -50,6 +50,17 @@ def generate_docx_report(results: List[Dict], output_path: str):
         doc,
         f"版本说明：括号内并列标注 {law.get('counterpart_label','')} 条号；"
         f"该修订版自 {law.get('counterpart_effective_from','')} 起施行，本报告结论不以其为依据。")
+
+    provenance = results[0].get("data_provenance") or {}
+    if provenance:
+        _add_lines(
+            doc,
+            "数据来源：规则库 v{r}（更新于 {u}），条号映射截至 {a}；"
+            "规则文件摘要 {h}。本报告结论基于上述版本，规则更新后需重新审查。".format(
+                r=provenance.get("rules_version", "?"),
+                u=provenance.get("rules_updated", "?"),
+                a=provenance.get("article_map_as_of", "?"),
+                h=(provenance.get("risk_rules") or {}).get("sha256_8", "?")))
     doc.add_paragraph("")
 
     for idx, result in enumerate(results, 1):
@@ -57,15 +68,18 @@ def generate_docx_report(results: List[Dict], output_path: str):
         overall = result["overall"]
 
         doc.add_heading("结论摘要", level=2)
-        table = doc.add_table(rows=5, cols=2)
+        table = doc.add_table(rows=6, cols=2)
         table.style = 'Light Grid Accent 1'
         rows = [
             ("商标名称", result['trademark_name']),
             ("指定类别", ", ".join(map(str, result['classes']))),
             ("审查结论", overall.get("verdict", overall.get("risk_level", ""))),
             ("预估成功率", "不适用（命中禁用条款）" if overall.get("success_rate") is None
-             else f"{overall['success_rate']}%（启发式估算，非统计数据）"),
+             and overall.get("verdict") == "不得注册"
+             else ("不适用（结论未决）" if overall.get("success_rate") is None
+                   else f"{overall['success_rate']}%（启发式估算，非统计数据）")),
             ("结论完整性", "完整" if overall.get("completeness") == "complete" else "不完整（在先商标未检索）"),
+            ("规则库版本", f"v{(result.get('data_provenance') or {}).get('rules_version', '?')}"),
         ]
         for i, (k, v) in enumerate(rows):
             table.rows[i].cells[0].text = k
@@ -141,14 +155,24 @@ def generate_docx_report(results: List[Dict], output_path: str):
             _add_lines(doc, "本报告结论不包含在先商标冲突判断。")
 
         # 4. 结论边界
+        coverage = result.get("coverage")
+        if coverage:
+            doc.add_heading("4. 本次检查范围", level=2)
+            _add_lines(doc, "已执行：")
+            for item in coverage.get("checked", []):
+                _add_lines(doc, f"• {item}", style='List Bullet')
+            _add_lines(doc, "未执行（本报告结论不含以下判断）：")
+            for item in coverage.get("not_checked", []):
+                _add_lines(doc, f"• {item}", style='List Bullet')
+
         caveats = overall.get("caveats") or []
         if caveats:
-            doc.add_heading("4. 结论边界", level=2)
+            doc.add_heading("5. 结论边界", level=2)
             for c in caveats:
                 _add_lines(doc, f"• {c}", style='List Bullet')
 
         if overall.get("ai_alternatives"):
-            doc.add_heading("5. AI 修改建议", level=2)
+            doc.add_heading("6. AI 修改建议", level=2)
             for i, alt in enumerate(overall["ai_alternatives"], 1):
                 _add_lines(doc, f"{i}. {alt}")
 

@@ -584,6 +584,8 @@ class TrademarkReviewer:
             "trademark_name": trademark_name,
             "classes": classes,
             "review_date": self._today(),
+            "data_provenance": self._data_provenance(),
+            "coverage": self._coverage_report(prohibited, distinctive, similarity),
             "law": {
                 "version": cur_v,
                 "label": versions[cur_v]["label"],
@@ -680,12 +682,84 @@ class TrademarkReviewer:
             for c in overall["caveats"]:
                 print(f"  - {c}")
 
+        coverage = result.get("coverage")
+        if coverage:
+            print("\n📋 本次检查范围:")
+            for item in coverage["checked"]:
+                print(f"  ✅ {item}")
+            for item in coverage["not_checked"]:
+                print(f"  ⛔ {item}")
+
+        prov = result.get("data_provenance")
+        if prov:
+            print(f"\n🗂  规则库: v{prov.get('rules_version')}（更新于 {prov.get('rules_updated')}）"
+                  f"，条号映射截至 {prov.get('article_map_as_of')}")
+
         if overall.get("ai_alternatives"):
             print("\n🤖 AI修改建议:")
             for i, alt in enumerate(overall["ai_alternatives"][:5], 1):
                 print(f"  {i}. {alt}")
 
         print("=" * 60)
+
+    def _data_provenance(self) -> Dict:
+        """
+        数据新鲜度与来源。报告里必须写明规则库版本和生成日期，
+        让读者能判断"这份结论是基于什么时候的规则算出来的"。
+        """
+        rules_path = self.skill_dir / "references" / "risk_rules.json"
+        geo_path = self.skill_dir / "references" / "geographic_names.json"
+        law_path = self.skill_dir / "references" / "laws" / f"trademark_law_{self.law_version}.md"
+
+        def _stamp(p: Path) -> Dict:
+            if not p.exists():
+                return {"path": str(p.relative_to(self.skill_dir)), "status": "missing"}
+            return {
+                "path": str(p.relative_to(self.skill_dir)),
+                "bytes": p.stat().st_size,
+                # 用内容摘要而非文件 mtime：clone 后 mtime 不可信
+                "sha256_8": __import__("hashlib").sha256(p.read_bytes()).hexdigest()[:8],
+            }
+
+        return {
+            "rules_version": self.risk_rules.get("version"),
+            "rules_updated": self.risk_rules.get("last_updated"),
+            "article_map_as_of": self.article_map.get("as_of"),
+            "risk_rules": _stamp(rules_path),
+            "geographic_names": _stamp(geo_path),
+            "law_text": _stamp(law_path),
+        }
+
+    @staticmethod
+    def _coverage_report(prohibited: Dict, distinctive: Dict, similarity: Dict) -> Dict:
+        """
+        明写"查了什么、没查什么"。这是法律类工具最该暴露的一栏：
+        读者据此知道结论的效力范围，而不是默认"没报错就是全查过了"。
+        """
+        sim_status = similarity.get("status")
+        similarity_label = {
+            "ok": "已检索",
+            "skipped": "已跳过（用户指定）",
+            "not_configured": "未执行（未配置数据源）",
+            "error": "失败（结论不含冲突判断）",
+        }.get(sim_status, "未执行")
+
+        checked = [
+            "禁用标志（国家名称/国家象征/欺骗性/政治敏感/民族宗教）",
+            "显著性（描述性词汇、尼斯分类 1-45 类通用名称）",
+            "县级以上行政区划地名（省级/地级/县级）",
+        ]
+        not_checked = [
+            "在先商标近似检索：" + similarity_label,
+            "图形、声音、三维、动态商标",
+            "跨类别近似与类似商品/服务判定",
+            "使用证据与在先使用抗辩",
+        ]
+        if not distinctive.get("ai_analysis") and not prohibited.get("ai_checked"):
+            not_checked.append("语义歧义判断（AI 分析未启用）")
+
+        return {"checked": checked, "not_checked": not_checked,
+                "similarity_status": sim_status}
 
     @staticmethod
     def _manual_review_advice(prohibited: Dict) -> str:
