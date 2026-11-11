@@ -36,7 +36,14 @@ if [ "$LEVEL" = "l0" ]; then echo "✅ verify l0 通过（语法 + JSON/YAML 解
 
 # ---------- L1 回归测试 ----------
 OUT="$("$PY" tests/test_review.py 2>&1)"
-echo "$OUT" | tail -1 | grep -q "所有测试通过" || { echo "$OUT" | tail -20; fail "回归测试"; }
+if ! echo "$OUT" | tail -1 | grep -q "所有测试通过"; then
+  # 打印失败用例名与最后的异常行，不打印整份日志
+  echo "---- 失败的回归用例 ----"
+  echo "$OUT" | grep -aE "^❌ [a-z_]+|^❌ .*运行错误|AssertionError" | head -20
+  echo "---- 输出尾部 ----"
+  echo "$OUT" | tail -8
+  fail "回归测试"
+fi
 
 if [ "$LEVEL" = "l1" ]; then echo "✅ verify l1 通过（15 项回归测试）"; exit 0; fi
 
